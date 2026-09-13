@@ -13,10 +13,13 @@ import hashlib
 import logging
 import os
 import re
+import uuid
 from pathlib import Path
 from typing import List, Tuple
 
 import numpy as np
+
+from .audio import save_audio
 
 logger = logging.getLogger("voicebox.chunked-tts")
 
@@ -206,17 +209,19 @@ def concatenate_audio_chunks(
     return result
 
 
-
 def _chunk_dump_dir(text: str, seed: int | None) -> Path | None:
     """Directory for per-chunk dumps when ``VOICEBOX_DUMP_CHUNKS`` is set, else None.
 
-    One sub-directory per (text, seed) so repeated runs of the same request
-    land together and different requests never overwrite each other.
+    Seeded runs share one sub-directory per (text, seed): identical requests
+    are reproducible, so their dumps may overwrite each other. Unseeded runs
+    (including "regenerate") get a fresh suffix so takes never collide.
     """
     root = os.environ.get("VOICEBOX_DUMP_CHUNKS")
     if not root:
         return None
     digest = hashlib.sha1(f"{seed}:{text}".encode()).hexdigest()[:10]
+    if seed is None:
+        digest = f"{digest}-{uuid.uuid4().hex[:6]}"
     return Path(root) / digest
 
 
@@ -228,8 +233,6 @@ def _dump_chunk(dump_dir: Path | None, index: int, chunk_text: str, audio: np.nd
     if dump_dir is None:
         return
     try:
-        from .audio import save_audio
-
         dump_dir.mkdir(parents=True, exist_ok=True)
         save_audio(audio, str(dump_dir / f"chunk_{index:03d}.wav"), sample_rate)
         (dump_dir / f"chunk_{index:03d}.txt").write_text(chunk_text, encoding="utf-8")

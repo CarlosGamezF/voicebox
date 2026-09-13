@@ -3,6 +3,7 @@ MLX backend implementation for TTS and STT using mlx-audio.
 """
 
 from typing import Optional, List, Tuple
+import inspect
 import logging
 import numpy as np
 from pathlib import Path
@@ -241,7 +242,7 @@ class MLXTTSBackend:
         accent instead of an error.
         """
         ref_audio = voice_prompt.get("ref_audio") or voice_prompt.get("ref_audio_path")
-        ref_text = voice_prompt.get("ref_text", "")
+        ref_text = voice_prompt.get("ref_text") or ""
         if ref_audio and not Path(ref_audio).exists():
             raise FileNotFoundError(
                 f"Reference audio for this voice profile is missing: {ref_audio}. "
@@ -258,8 +259,6 @@ class MLXTTSBackend:
         if ref_audio is None:
             return list(self.model.generate(text, lang_code=lang))
 
-        import inspect
-
         if "ref_audio" not in inspect.signature(self.model.generate).parameters:
             raise RuntimeError("Loaded MLX model does not support voice cloning (no ref_audio parameter)")
 
@@ -275,27 +274,40 @@ class MLXTTSBackend:
         return list(self.model.generate(text, ref_audio=ref_audio, ref_text=ref_text, lang_code=lang))
 
     def _warn_if_token_capped(self, text: str, results: list) -> None:
-        """Flag chunks that hit mlx-audio's ICL token cap.
+        """Flag chunks that hit mlx-audio's token cap; diagnostics only.
 
         mlx-audio stops in-context generation at max(75, 6 * text tokens)
         codec tokens and yields the truncated audio without any signal, so a
         slow or pause-heavy delivery is cut mid-sentence. Voicebox cannot
-        recover the lost speech, but it can say so.
+        recover the lost speech, but it can say so. Nothing here may fail a
+        take that already produced audio.
         """
+        try:
+            self._check_token_cap(text, results)
+        except Exception as exc:
+            logger.debug("Token-cap check skipped: %s", exc)
+
+    def _check_token_cap(self, text: str, results: list) -> None:
         tokenizer = getattr(self.model, "tokenizer", None)
         if tokenizer is None or not hasattr(tokenizer, "encode"):
             return
-        token_count = sum(int(getattr(r, "token_count", 0) or 0) for r in results)
-        cap = max(75, len(tokenizer.encode(text)) * 6)
-        if token_count >= cap:
-            logger.warning(
-                "MLX TTS chunk hit mlx-audio's token cap (%d codec tokens for %d chars); "
-                "the audio may be truncated. Use shorter chunks for slow or pause-heavy delivery.",
-                token_count,
-                len(text),
-            )
-        else:
-            logger.debug("MLX TTS chunk used %d/%d codec tokens", token_count, cap)
+        counts = [int(getattr(r, "token_count", 0) or 0) for r in results]
+        # Without a reference mlx-audio splits on newlines and caps each
+        # segment; the clone path yields one result for the whole text.
+        segments = [s for s in text.split("\n") if s.strip()]
+        if len(segments) != len(counts):
+            segments, counts = [text], [sum(counts)]
+        for segment, used in zip(segments, counts, strict=True):
+            cap = max(75, len(tokenizer.encode(segment)) * 6)
+            if used >= cap:
+                logger.warning(
+                    "MLX TTS chunk hit mlx-audio's token cap (%d codec tokens for %d chars); "
+                    "the audio may be truncated. Use shorter chunks for slow or pause-heavy delivery.",
+                    used,
+                    len(segment),
+                )
+            else:
+                logger.debug("MLX TTS chunk used %d/%d codec tokens", used, cap)
 
 
 class MLXSTTBackend:

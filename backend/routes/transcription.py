@@ -58,7 +58,7 @@ async def transcribe_audio(
             await asyncio.to_thread(save_audio, audio, stt_path, sr)
 
         whisper_model = transcribe.get_whisper_model()
-        model_size = transcribe.resolve_transcription_model(model, db)
+        model_size = transcribe.resolve_transcription_model(model, db, whisper_model)
 
         valid_sizes = list(WHISPER_HF_REPOS.keys())
         if model_size not in valid_sizes:

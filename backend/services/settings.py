@@ -9,6 +9,7 @@ an ``update_*`` that accepts a partial payload.
 
 from typing import Any
 
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from ..database import CaptureSettings as DBCaptureSettings
@@ -22,27 +23,41 @@ from ..utils.capture_chords import (
 SINGLETON_ID = 1
 
 
+def _insert_singleton(db: Session, row: Any, model: Any) -> Any:
+    """Insert the singleton row; if a concurrent request won the race, use theirs.
+
+    The getters run on hot read paths (/speak, /transcribe, MCP), so two first
+    requests on a fresh database can both try to insert id=1.
+    """
+    db.add(row)
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        return db.query(model).filter(model.id == SINGLETON_ID).first()
+    db.refresh(row)
+    return row
+
+
 def _get_or_create_capture_row(db: Session) -> DBCaptureSettings:
     row = db.query(DBCaptureSettings).filter(DBCaptureSettings.id == SINGLETON_ID).first()
     if row is None:
-        row = DBCaptureSettings(
-            id=SINGLETON_ID,
-            chord_push_to_talk_keys=default_push_to_talk_chord(),
-            chord_toggle_to_talk_keys=default_toggle_to_talk_chord(),
+        row = _insert_singleton(
+            db,
+            DBCaptureSettings(
+                id=SINGLETON_ID,
+                chord_push_to_talk_keys=default_push_to_talk_chord(),
+                chord_toggle_to_talk_keys=default_toggle_to_talk_chord(),
+            ),
+            DBCaptureSettings,
         )
-        db.add(row)
-        db.commit()
-        db.refresh(row)
     return row
 
 
 def _get_or_create_generation_row(db: Session) -> DBGenerationSettings:
     row = db.query(DBGenerationSettings).filter(DBGenerationSettings.id == SINGLETON_ID).first()
     if row is None:
-        row = DBGenerationSettings(id=SINGLETON_ID)
-        db.add(row)
-        db.commit()
-        db.refresh(row)
+        row = _insert_singleton(db, DBGenerationSettings(id=SINGLETON_ID), DBGenerationSettings)
     return row
 
 

@@ -318,7 +318,7 @@ async def _transcribe_file(
         # Omitted size follows the persisted STT setting, like POST /transcribe.
         db = next(get_db())
         try:
-            model = transcribe_service.resolve_transcription_model(None, db)
+            model = transcribe_service.resolve_transcription_model(None, db, whisper)
         finally:
             db.close()
     model_size = model

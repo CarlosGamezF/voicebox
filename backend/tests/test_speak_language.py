@@ -97,7 +97,7 @@ def captured_request(monkeypatch):
     return captured
 
 
-# ─── REST: POST /speak ────────────────────────────────────────────────────
+# REST: POST /speak
 
 
 async def _call_rest(monkeypatch, profile_language, requested_language=None):
@@ -136,7 +136,7 @@ async def test_rest_speak_defaults_to_en_without_profile_language(
     assert captured_request["req"].language == "en"
 
 
-# ─── MCP: voicebox.speak ──────────────────────────────────────────────────
+# MCP: voicebox.speak
 
 
 async def _call_mcp(monkeypatch, profile_language, requested_language=None):
@@ -178,7 +178,7 @@ async def test_mcp_speak_defaults_to_en_without_profile_language(
     assert captured_request["req"].language == "en"
 
 
-# ─── Persisted generation settings on both surfaces ───────────────────────
+# Persisted generation settings on both surfaces
 
 
 async def test_rest_speak_applies_persisted_generation_settings(
