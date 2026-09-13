@@ -75,6 +75,7 @@ export function SampleUpload({ profileId, open, onOpenChange }: SampleUploadProp
     cancelRecording,
   } = useAudioRecording({
     maxDurationSeconds: 29,
+    rawAudio: true,
     onRecordingComplete: (blob, recordedDuration) => {
       // Convert blob to File object
       const file = new File([blob], `recording-${Date.now()}.webm`, {

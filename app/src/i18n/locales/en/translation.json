@@ -337,7 +337,7 @@
   },
   "audioSample": {
     "chooseFile": "Choose File",
-    "uploadHint": "Click to choose a file or drag and drop. Maximum duration: 30 seconds.",
+    "uploadHint": "Click to choose a file or drag and drop. Aim for 10-15 seconds of expressive speech with a clean ending; maximum 30 seconds.",
     "fileUploaded": "File uploaded",
     "fileLabel": "File: {{name}}",
     "play": "Play",
@@ -346,7 +346,7 @@
     "transcribing": "Transcribing…",
     "remove": "Remove",
     "startRecording": "Start Recording",
-    "recordHint": "Click to start recording. Maximum duration: 30 seconds.",
+    "recordHint": "Click to start recording. Aim for 10-15 seconds of expressive speech with a clean ending; maximum 30 seconds.",
     "stopRecording": "Stop Recording",
     "remaining": "{{time}} remaining",
     "recordingComplete": "Recording complete",
@@ -369,7 +369,7 @@
     "editTranscription": "Edit transcription",
     "deleteSample": "Delete sample",
     "addSample": "Add Sample",
-    "note": "Note: A single 30-second sample is the sweet spot. Quality may decrease with multiple samples. In a future update samples might be interchangeable and tagged for varying styles of the same voice.",
+    "note": "Note: A single 10-15 second sample with varied intonation, a quiet room and a clean ending works best; longer clips do not improve the clone. Quality may decrease with multiple samples. In a future update samples might be interchangeable and tagged for varying styles of the same voice.",
     "deleteDialog": {
       "title": "Delete Sample",
       "description": "Are you sure you want to delete this audio sample? This action cannot be undone.",

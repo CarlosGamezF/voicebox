@@ -337,7 +337,7 @@
   },
   "audioSample": {
     "chooseFile": "Elegir archivo",
-    "uploadHint": "Haz clic para elegir un archivo o arrástralo y suéltalo. Duración máxima: 30 segundos.",
+    "uploadHint": "Haz clic para elegir un archivo o arrástralo y suéltalo. Lo ideal son 10-15 segundos de habla expresiva con un final limpio; máximo 30 segundos.",
     "fileUploaded": "Archivo subido",
     "fileLabel": "Archivo: {{name}}",
     "play": "Reproducir",
@@ -346,7 +346,7 @@
     "transcribing": "Transcribiendo…",
     "remove": "Quitar",
     "startRecording": "Iniciar grabación",
-    "recordHint": "Haz clic para empezar a grabar. Duración máxima: 30 segundos.",
+    "recordHint": "Haz clic para empezar a grabar. Lo ideal son 10-15 segundos de habla expresiva con un final limpio; máximo 30 segundos.",
     "stopRecording": "Detener grabación",
     "remaining": "{{time}} restantes",
     "recordingComplete": "Grabación completada",
@@ -369,7 +369,7 @@
     "editTranscription": "Editar transcripción",
     "deleteSample": "Eliminar muestra",
     "addSample": "Añadir muestra",
-    "note": "Nota: una sola muestra de 30 segundos es el punto ideal. La calidad puede disminuir con varias muestras. En una futura actualización las muestras podrían ser intercambiables y etiquetarse para distintos estilos de la misma voz.",
+    "note": "Nota: lo que mejor funciona es una sola muestra de 10-15 segundos con entonación variada, sin ruido y con un final limpio; los clips más largos no mejoran el clon. La calidad puede disminuir con varias muestras. En una futura actualización las muestras podrían ser intercambiables y etiquetarse para distintos estilos de la misma voz.",
     "deleteDialog": {
       "title": "Eliminar muestra",
       "description": "¿Seguro que quieres eliminar esta muestra de audio? Esta acción no se puede deshacer.",

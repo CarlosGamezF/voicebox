@@ -231,6 +231,7 @@ export function ProfileForm() {
     cancelRecording,
   } = useAudioRecording({
     maxDurationSeconds: 29,
+    rawAudio: true,
     onRecordingComplete: (blob, recordedDuration) => {
       const file = new File([blob], `recording-${Date.now()}.webm`, {
         type: blob.type || 'audio/webm',

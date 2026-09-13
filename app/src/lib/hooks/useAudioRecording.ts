@@ -4,12 +4,19 @@ import { convertToWav } from '@/lib/utils/audio';
 
 interface UseAudioRecordingOptions {
   maxDurationSeconds?: number;
+  /**
+   * Capture the raw microphone signal. Browser echo cancellation, noise
+   * suppression and automatic gain control change the timbre and dynamics of
+   * a voice-clone reference; dictation keeps them on for intelligibility.
+   */
+  rawAudio?: boolean;
   onRecordingComplete?: (blob: Blob, duration?: number) => void;
 }
 
 export function useAudioRecording({
   maxDurationSeconds,
   onRecordingComplete,
+  rawAudio = false,
 }: UseAudioRecordingOptions = {}) {
   const platform = usePlatform();
   const [isRecording, setIsRecording] = useState(false);
@@ -61,9 +68,9 @@ export function useAudioRecording({
       // Request microphone access
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true,
+          echoCancellation: !rawAudio,
+          noiseSuppression: !rawAudio,
+          autoGainControl: !rawAudio,
         },
       });
 
@@ -162,7 +169,7 @@ export function useAudioRecording({
       setError(errorMessage);
       setIsRecording(false);
     }
-  }, [maxDurationSeconds, onRecordingComplete]);
+  }, [maxDurationSeconds, onRecordingComplete, rawAudio]);
 
   const stopRecording = useCallback(() => {
     if (mediaRecorderRef.current && isRecording) {
