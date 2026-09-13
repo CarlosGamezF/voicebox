@@ -180,88 +180,122 @@ class MLXTTSBackend:
         Args:
             text: Text to synthesize
             voice_prompt: Voice prompt dictionary with ref_audio and ref_text
-            language: Language code (en or zh) - may not be fully supported by MLX
+            language: ISO code (en, es, zh, ...); mapped to the Qwen3-TTS
+                language name, unsupported codes fall back to "auto"
             seed: Random seed for reproducibility
-            instruct: Natural language instruction (may not be supported by MLX)
+            instruct: Ignored by the Base checkpoint on MLX (protocol compatibility)
 
         Returns:
             Tuple of (audio_array, sample_rate)
+
+        Raises:
+            FileNotFoundError: the voice prompt points at a missing reference file
+            RuntimeError: the model cannot clone, fails while cloning, or yields no audio
         """
         await self.load_model_async(None)
 
         logger.info("Generating audio for text: %s", text)
+        if instruct:
+            logger.debug("instruct is ignored by the Qwen3-TTS Base checkpoint on MLX")
 
         def _generate_sync():
-            """Run synchronous generation in thread pool."""
-            # MLX generate() returns a generator yielding GenerationResult objects
-            audio_chunks = []
-            sample_rate = 24000
-            lang = LANGUAGE_CODE_TO_NAME.get(language, "auto")
-
-            # Set seed if provided (MLX uses numpy random)
+            """Run synchronous generation on the dedicated MLX thread."""
             if seed is not None:
                 import mlx.core as mx
 
                 np.random.seed(seed)
                 mx.random.seed(seed)
 
-            # Extract voice prompt info
-            ref_audio = voice_prompt.get("ref_audio") or voice_prompt.get("ref_audio_path")
-            ref_text = voice_prompt.get("ref_text", "")
+            lang = self._resolve_language(language)
+            ref_audio, ref_text = self._reference_from_prompt(voice_prompt)
+            results = self._run_model(text, ref_audio, ref_text, lang)
+            if not results:
+                raise RuntimeError("MLX TTS model produced no audio")
 
-            # Validate that the audio file exists
-            if ref_audio and not Path(ref_audio).exists():
-                logger.warning("Audio file not found: %s", ref_audio)
-                logger.warning("This may be due to a cached voice prompt referencing a deleted temp file.")
-                logger.warning("Regenerating without voice prompt.")
-                ref_audio = None
-
-            # Inference runs with the process's default HF_HUB_OFFLINE
-            # state. Forcing offline here (previously used to avoid lazy
-            # mlx_audio lookups hanging when the network drops mid-inference,
-            # issue #462) regressed online users because libraries make
-            # legitimate metadata calls during generation.
-            try:
-                if ref_audio:
-                    # Check if generate accepts ref_audio parameter
-                    import inspect
-
-                    sig = inspect.signature(self.model.generate)
-                    if "ref_audio" in sig.parameters:
-                        # Generate with voice cloning
-                        for result in self.model.generate(text, ref_audio=ref_audio, ref_text=ref_text, lang_code=lang):
-                            audio_chunks.append(np.array(result.audio))
-                            sample_rate = result.sample_rate
-                    else:
-                        # Fallback: generate without voice cloning
-                        for result in self.model.generate(text, lang_code=lang):
-                            audio_chunks.append(np.array(result.audio))
-                            sample_rate = result.sample_rate
-                else:
-                    # No voice prompt, generate normally
-                    for result in self.model.generate(text, lang_code=lang):
-                        audio_chunks.append(np.array(result.audio))
-                        sample_rate = result.sample_rate
-            except Exception as e:
-                # If voice cloning fails, try without it
-                logger.warning("Voice cloning failed, generating without voice prompt: %s", e)
-                for result in self.model.generate(text, lang_code=lang):
-                    audio_chunks.append(np.array(result.audio))
-                    sample_rate = result.sample_rate
-
-            # Concatenate all chunks
-            if audio_chunks:
-                audio = np.concatenate([np.asarray(chunk, dtype=np.float32) for chunk in audio_chunks])
-            else:
-                # Fallback: empty audio
-                audio = np.array([], dtype=np.float32)
-
-            return audio, sample_rate
+            self._warn_if_token_capped(text, results)
+            audio = np.concatenate([np.asarray(np.array(r.audio), dtype=np.float32) for r in results])
+            return audio, getattr(results[-1], "sample_rate", 24000)
 
         # Run blocking inference on the dedicated MLX thread
-        audio, sample_rate = await run_in_mlx_executor(_generate_sync)
+        return await run_in_mlx_executor(_generate_sync)
 
-        return audio, sample_rate
+    @staticmethod
+    def _resolve_language(language: str) -> str:
+        """Map an ISO code to the language name Qwen3-TTS expects.
+
+        Unknown codes used to become "auto" silently, which conditions the
+        text on no language at all; make the fallback visible.
+        """
+        lang = LANGUAGE_CODE_TO_NAME.get(language)
+        if lang is None:
+            logger.warning("Language %r is not supported by Qwen3-TTS; falling back to auto", language)
+            return "auto"
+        return lang
+
+    @staticmethod
+    def _reference_from_prompt(voice_prompt: dict) -> tuple[str | None, str]:
+        """Return (ref_audio_path, ref_text) from a voice prompt, or fail loudly.
+
+        Substituting the model's default voice for a missing reference used to
+        hide a broken clone behind a warning; the take sounded like a bad
+        accent instead of an error.
+        """
+        ref_audio = voice_prompt.get("ref_audio") or voice_prompt.get("ref_audio_path")
+        ref_text = voice_prompt.get("ref_text", "")
+        if ref_audio and not Path(ref_audio).exists():
+            raise FileNotFoundError(
+                f"Reference audio for this voice profile is missing: {ref_audio}. "
+                "Re-add the voice sample or clear the voice prompt cache."
+            )
+        if not ref_audio:
+            logger.warning("No reference audio in voice prompt; generating with the model's default voice")
+        elif not ref_text:
+            logger.warning("Reference transcript is empty; in-context cloning will run without text")
+        return ref_audio, ref_text
+
+    def _run_model(self, text: str, ref_audio: str | None, ref_text: str, lang: str) -> list:
+        """Call mlx-audio once and collect its GenerationResult objects."""
+        if ref_audio is None:
+            return list(self.model.generate(text, lang_code=lang))
+
+        import inspect
+
+        if "ref_audio" not in inspect.signature(self.model.generate).parameters:
+            raise RuntimeError("Loaded MLX model does not support voice cloning (no ref_audio parameter)")
+
+        # mlx-audio takes the in-context (ICL) cloning path when it has a
+        # reference, a transcript and a speech-tokenizer encoder.
+        has_encoder = getattr(getattr(self.model, "speech_tokenizer", None), "has_encoder", None)
+        logger.info(
+            "MLX TTS clone: lang_code=%s icl=%s ref_text_chars=%d",
+            lang,
+            has_encoder is not False,
+            len(ref_text or ""),
+        )
+        return list(self.model.generate(text, ref_audio=ref_audio, ref_text=ref_text, lang_code=lang))
+
+    def _warn_if_token_capped(self, text: str, results: list) -> None:
+        """Flag chunks that hit mlx-audio's ICL token cap.
+
+        mlx-audio stops in-context generation at max(75, 6 * text tokens)
+        codec tokens and yields the truncated audio without any signal, so a
+        slow or pause-heavy delivery is cut mid-sentence. Voicebox cannot
+        recover the lost speech, but it can say so.
+        """
+        tokenizer = getattr(self.model, "tokenizer", None)
+        if tokenizer is None or not hasattr(tokenizer, "encode"):
+            return
+        token_count = sum(int(getattr(r, "token_count", 0) or 0) for r in results)
+        cap = max(75, len(tokenizer.encode(text)) * 6)
+        if token_count >= cap:
+            logger.warning(
+                "MLX TTS chunk hit mlx-audio's token cap (%d codec tokens for %d chars); "
+                "the audio may be truncated. Use shorter chunks for slow or pause-heavy delivery.",
+                token_count,
+                len(text),
+            )
+        else:
+            logger.debug("MLX TTS chunk used %d/%d codec tokens", token_count, cap)
 
 
 class MLXSTTBackend:
