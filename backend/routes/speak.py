@@ -17,6 +17,7 @@ from .. import models
 from ..database import MCPClientBinding, get_db
 from ..mcp_server import events as mcp_events
 from ..mcp_server.resolve import resolve_profile
+from ..services.settings import get_generation_settings
 
 
 logger = logging.getLogger(__name__)
@@ -71,13 +72,22 @@ async def speak(
 
     from .generations import generate_speech
 
+    # Long-form defaults (chunk size, crossfade, normalisation) live in the
+    # persisted generation settings; the desktop form sends them explicitly,
+    # so REST callers must read them here or they silently run with the
+    # schema defaults (800 chars / 50 ms) instead of the user's choice.
+    gen_settings = get_generation_settings(db)
+
     generation = await generate_speech(
         models.GenerationRequest(
             profile_id=profile.id,
             text=data.text,
-            language=data.language or "en",
+            language=data.language or profile.language or "en",
             engine=engine,
             personality=bool(personality_flag),
+            max_chunk_chars=gen_settings.max_chunk_chars,
+            crossfade_ms=gen_settings.crossfade_ms,
+            normalize=gen_settings.normalize_audio,
         ),
         db,
     )

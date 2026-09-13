@@ -40,7 +40,7 @@ Rules that apply to every response:
 _COMPOSE_TASK = """Task: Produce one short utterance — one or two sentences at most — that this character might say right now, unprompted. A remark, an observation, a thought out loud. No greeting, no addressing anyone by name, no "Well, …" or "So, …" opener unless it fits the character naturally. Just a natural line of speech."""
 
 
-_REWRITE_TASK = """Task: The user's next message is a piece of text. Restate every idea in it using your character's voice — keep the meaning, change the wording. Do not add new ideas, do not drop any, do not reply to the text. Output only the restated version."""
+_REWRITE_TASK = """Task: The user's next message is a piece of text. Restate every idea in it using your character's voice — keep the meaning, change the wording. Do not add new ideas, do not drop any, do not reply to the text. Write the restated version in the same language as the user's text; never translate it. Output only the restated version."""
 
 
 @dataclass

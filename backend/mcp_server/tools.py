@@ -20,6 +20,7 @@ from .. import models
 from ..database import get_db
 from ..services import captures as captures_service
 from ..services import profiles as profiles_service
+from ..services.settings import get_generation_settings
 from . import events as mcp_events
 from .context import current_client_id, request_is_loopback
 from .resolve import resolve_profile
@@ -68,6 +69,11 @@ def register_tools(mcp: FastMCP) -> None:
         or "0.6B"; ``tada`` accepts "1B" or "3B". Other engines ignore it.
         Omit to use the engine default. Requesting a smaller variant (e.g.
         "0.6B") is faster and avoids reloading a heavier model between calls.
+
+        ``language`` is an ISO code such as "en", "es", "fr" or "zh". Omit it
+        to speak in the profile's own language; pass it only to override
+        (e.g. a Spanish profile reading an English sentence). Chunking and
+        normalisation follow the server's persisted generation settings.
         """
         from ..database.models import MCPClientBinding
 
@@ -104,7 +110,7 @@ def register_tools(mcp: FastMCP) -> None:
                 profile_name=vp.name,
                 text=text,
                 engine=resolved_engine,
-                language=language,
+                language=language or vp.language,
                 personality=use_persona,
                 model_size=model_size,
                 db=db,
@@ -246,6 +252,9 @@ async def _speak(
     # model_size=None is intentional: generate_speech normalizes it to the
     # engine default (see routes/generations.py), so an omitted size behaves
     # exactly like the REST /generate endpoint with no model_size in the body.
+    # Same persisted long-form defaults the desktop form sends explicitly;
+    # without them MCP generations ran with the schema defaults (800/50).
+    gen_settings = get_generation_settings(db)
     req = models.GenerationRequest(
         profile_id=profile_id,
         text=text,
@@ -253,6 +262,9 @@ async def _speak(
         engine=engine,
         personality=personality,
         model_size=model_size,
+        max_chunk_chars=gen_settings.max_chunk_chars,
+        crossfade_ms=gen_settings.crossfade_ms,
+        normalize=gen_settings.normalize_audio,
     )
     generation = await generate_speech(req, db)
     return _speak_response(generation, profile_name, source="mcp")

@@ -39,6 +39,13 @@ def captured_request(monkeypatch):
     # Isolate the unit from the MCP event bus — _speak_response fires a
     # speak-start event we don't care about here.
     monkeypatch.setattr(tools.mcp_events, "publish", lambda *a, **k: None)
+    # _speak reads the persisted generation settings from the db; these tests
+    # pass db=None, so serve a stub with the schema defaults.
+    monkeypatch.setattr(
+        tools,
+        "get_generation_settings",
+        lambda db: type("S", (), {"max_chunk_chars": 800, "crossfade_ms": 50, "normalize_audio": True})(),
+    )
     return captured
 
 
