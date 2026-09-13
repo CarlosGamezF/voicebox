@@ -4,9 +4,11 @@ import asyncio
 import tempfile
 from pathlib import Path
 
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from sqlalchemy.orm import Session
 
 from .. import models
+from ..database import get_db
 from ..services import transcribe
 from ..services.task_queue import create_background_task
 from ..utils.tasks import get_task_manager
@@ -25,6 +27,7 @@ async def transcribe_audio(
     file: UploadFile = File(...),
     language: str | None = Form(None),
     model: str | None = Form(None),
+    db: Session = Depends(get_db),
 ):
     """Transcribe audio file to text."""
     uploaded_ext = Path(file.filename or "").suffix.lower()
@@ -55,7 +58,7 @@ async def transcribe_audio(
             await asyncio.to_thread(save_audio, audio, stt_path, sr)
 
         whisper_model = transcribe.get_whisper_model()
-        model_size = model if model else whisper_model.model_size
+        model_size = transcribe.resolve_transcription_model(model, db)
 
         valid_sizes = list(WHISPER_HF_REPOS.keys())
         if model_size not in valid_sizes:

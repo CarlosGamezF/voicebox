@@ -314,7 +314,14 @@ async def _transcribe_file(
     from ..utils.audio import load_audio
 
     whisper = transcribe_service.get_whisper_model()
-    model_size = model or whisper.model_size
+    if not model:
+        # Omitted size follows the persisted STT setting, like POST /transcribe.
+        db = next(get_db())
+        try:
+            model = transcribe_service.resolve_transcription_model(None, db)
+        finally:
+            db.close()
+    model_size = model
     valid = list(WHISPER_HF_REPOS.keys())
     if model_size not in valid:
         raise ValueError(
