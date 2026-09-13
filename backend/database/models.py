@@ -82,6 +82,11 @@ class Generation(Base):
     # profile's personality LLM before TTS. Future sources (bulk import,
     # agent replies, etc.) can extend this.
     source = Column(String, nullable=False, default="manual")
+    # Chunking/normalisation the take was made with, replayed by retry and
+    # regenerate. NULL on rows written before these columns existed.
+    max_chunk_chars = Column(Integer, nullable=True)
+    crossfade_ms = Column(Integer, nullable=True)
+    normalize = Column(Boolean, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
 

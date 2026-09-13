@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from .. import config, models
 from ..services import history, personality, profiles, tts
+from ..services.settings import get_generation_settings
 from ..database import Generation as DBGeneration, VoiceProfile as DBVoiceProfile, get_db
 from ..services.generation import run_generation
 from ..services.task_queue import cancel_generation as cancel_generation_job, enqueue_generation
@@ -97,6 +98,9 @@ async def generate_speech(
         seed=data.seed,
         db=db,
         instruct=data.instruct,
+        max_chunk_chars=data.max_chunk_chars,
+        crossfade_ms=data.crossfade_ms,
+        normalize=data.normalize,
         generation_id=generation_id,
         status="generating",
         engine=engine,
@@ -145,6 +149,21 @@ async def generate_speech(
     return generation
 
 
+def _replay_settings(gen: DBGeneration, db: Session) -> dict:
+    """Chunking and normalisation to reuse when re-running a take.
+
+    Values stored on the row win; rows written before the columns existed
+    fall back to the persisted generation settings, never to the schema
+    defaults, so a retry or regenerate keeps the user's chunking.
+    """
+    settings = get_generation_settings(db)
+    return {
+        "max_chunk_chars": gen.max_chunk_chars if gen.max_chunk_chars is not None else settings.max_chunk_chars,
+        "crossfade_ms": gen.crossfade_ms if gen.crossfade_ms is not None else settings.crossfade_ms,
+        "normalize": gen.normalize if gen.normalize is not None else settings.normalize_audio,
+    }
+
+
 @router.post("/generate/{generation_id}/retry", response_model=models.GenerationResponse)
 async def retry_generation(generation_id: str, db: Session = Depends(get_db)):
     """Retry a failed generation using the same parameters."""
@@ -181,6 +200,7 @@ async def retry_generation(generation_id: str, db: Session = Depends(get_db)):
             seed=gen.seed,
             instruct=gen.instruct,
             mode="retry",
+            **_replay_settings(gen, db),
         )
     )
 
@@ -226,6 +246,7 @@ async def regenerate_generation(generation_id: str, db: Session = Depends(get_db
             instruct=gen.instruct,
             mode="regenerate",
             version_id=version_id,
+            **_replay_settings(gen, db),
         )
     )
 

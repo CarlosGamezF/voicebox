@@ -93,8 +93,9 @@ async def run_generation(
 
         audio, sample_rate = await generate_chunked(tts_model, text, voice_prompt, **gen_kwargs)
 
-        # --- Normalize (generate and regenerate always; retry skips) -----
-        if normalize or mode == "regenerate":
+        # --- Normalize when the take asks for it (retry/regenerate replay
+        # the original setting instead of forcing it) -------------------
+        if normalize:
             audio = normalize_audio(audio)
 
         duration = len(audio) / sample_rate

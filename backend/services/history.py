@@ -66,6 +66,9 @@ async def create_generation(
     engine: Optional[str] = "qwen",
     model_size: Optional[str] = None,
     source: str = "manual",
+    max_chunk_chars: int | None = None,
+    crossfade_ms: int | None = None,
+    normalize: bool | None = None,
 ) -> GenerationResponse:
     """
     Create a new generation history entry.
@@ -87,6 +90,8 @@ async def create_generation(
             /generate calls; ``"personality_speak"`` for rows created
             by the /profiles/{id}/speak endpoint. Enables filtering the
             history view for personality-driven output.
+        max_chunk_chars, crossfade_ms, normalize: long-form settings the
+            take was made with, so retry/regenerate can replay them.
 
     Returns:
         Created generation entry
@@ -104,6 +109,9 @@ async def create_generation(
         model_size=model_size,
         status=status,
         source=source,
+        max_chunk_chars=max_chunk_chars,
+        crossfade_ms=crossfade_ms,
+        normalize=normalize,
         created_at=datetime.utcnow(),
     )
 
