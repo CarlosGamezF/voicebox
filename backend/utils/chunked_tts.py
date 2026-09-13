@@ -9,8 +9,11 @@ Short text (≤ max_chunk_chars) uses the single-shot fast path with zero
 overhead.
 """
 
+import hashlib
 import logging
+import os
 import re
+from pathlib import Path
 from typing import List, Tuple
 
 import numpy as np
@@ -203,6 +206,37 @@ def concatenate_audio_chunks(
     return result
 
 
+
+def _chunk_dump_dir(text: str, seed: int | None) -> Path | None:
+    """Directory for per-chunk dumps when ``VOICEBOX_DUMP_CHUNKS`` is set, else None.
+
+    One sub-directory per (text, seed) so repeated runs of the same request
+    land together and different requests never overwrite each other.
+    """
+    root = os.environ.get("VOICEBOX_DUMP_CHUNKS")
+    if not root:
+        return None
+    digest = hashlib.sha1(f"{seed}:{text}".encode()).hexdigest()[:10]
+    return Path(root) / digest
+
+
+def _dump_chunk(dump_dir: Path | None, index: int, chunk_text: str, audio: np.ndarray, sample_rate: int) -> None:
+    """Write one chunk's audio (before crossfading) and its text for offline analysis.
+
+    Dumping is diagnostics only: any failure is logged and generation goes on.
+    """
+    if dump_dir is None:
+        return
+    try:
+        from .audio import save_audio
+
+        dump_dir.mkdir(parents=True, exist_ok=True)
+        save_audio(audio, str(dump_dir / f"chunk_{index:03d}.wav"), sample_rate)
+        (dump_dir / f"chunk_{index:03d}.txt").write_text(chunk_text, encoding="utf-8")
+    except Exception as exc:
+        logger.warning("Could not dump chunk %d to %s: %s", index, dump_dir, exc)
+
+
 async def generate_chunked(
     backend,
     text: str,
@@ -307,10 +341,13 @@ async def generate_chunked(
         return np.asarray(chunk_audio, dtype=np.float32), chunk_sr
 
     chunks = split_text_into_chunks(text, max_chunk_chars)
+    dump_dir = _chunk_dump_dir(text, seed)
 
     if len(chunks) <= 1:
         # Short text — single-shot fast path
-        return await generate_one(text, seed)
+        audio, sample_rate = await generate_one(text, seed)
+        _dump_chunk(dump_dir, 0, text, audio, sample_rate)
+        return audio, sample_rate
 
     # Long text — chunked generation
     logger.info(
@@ -338,6 +375,7 @@ async def generate_chunked(
             chunk_text,
             chunk_seed,
         )
+        _dump_chunk(dump_dir, i, chunk_text, chunk_audio, chunk_sr)
 
         audio_chunks.append(chunk_audio)
         if sample_rate is None:
