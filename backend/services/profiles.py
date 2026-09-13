@@ -18,7 +18,14 @@ from ..models import (
     VoiceProfileCreate,
     VoiceProfileResponse,
 )
-from ..utils.audio import save_audio, validate_and_load_reference_audio
+from ..utils.audio import (
+    analyze_reference_audio,
+    load_audio,
+    reference_audio_warnings,
+    save_audio,
+    trim_reference_window,
+    validate_reference_audio_array,
+)
 from ..utils.cache import _get_cache_dir, clear_profile_cache
 from ..utils.images import process_avatar, validate_image
 
@@ -202,6 +209,8 @@ async def add_profile_sample(
     audio_path: str,
     reference_text: str,
     db: Session,
+    start_s: float | None = None,
+    end_s: float | None = None,
 ) -> ProfileSampleResponse:
     """
     Add a sample to a voice profile.
@@ -211,9 +220,11 @@ async def add_profile_sample(
         audio_path: Path to temporary audio file
         reference_text: Transcript of audio
         db: Database session
+        start_s, end_s: optional window (seconds) to keep from the upload, so
+            a long recording can be cut to the 10-15 s that clone best
 
     Returns:
-        Created sample
+        Created sample, with quality warnings about the clip as recorded
     """
     import asyncio
 
@@ -221,12 +232,13 @@ async def add_profile_sample(
     if not profile:
         raise ValueError(f"Profile {profile_id} not found")
 
-    # Validate and load audio in a single pass, off the event loop
-    is_valid, error_msg, audio, sr = await asyncio.to_thread(
-        validate_and_load_reference_audio, audio_path
+    is_valid, error_msg, audio, sr, warnings = await asyncio.to_thread(
+        _load_window_and_check, audio_path, start_s, end_s
     )
     if not is_valid:
         raise ValueError(f"Invalid reference audio: {error_msg}")
+    if warnings:
+        logger.warning("Reference sample for profile %s: %s", profile_id, " | ".join(warnings))
 
     sample_id = str(uuid.uuid4())
     profile_dir = config.get_profiles_dir() / profile_id
@@ -253,7 +265,37 @@ async def add_profile_sample(
     # Since a new sample was added, any cached combined audio is now stale
     clear_profile_cache(profile_id)
 
-    return ProfileSampleResponse.model_validate(db_sample)
+    response = ProfileSampleResponse.model_validate(db_sample)
+    return response.model_copy(update={"warnings": warnings})
+
+
+def _load_window_and_check(audio_path: str, start_s: float | None, end_s: float | None):
+    """Load an upload, apply the optional window, measure it, then validate and preprocess it.
+
+    The warnings describe the clip as recorded (before edge trimming), which is
+    what the user can act on.
+    """
+    raw, sr = load_audio(audio_path)
+    if start_s is not None or end_s is not None:
+        raw = trim_reference_window(raw, sr, start_s, end_s)
+    warnings = reference_audio_warnings(analyze_reference_audio(raw, sr))
+    is_valid, error_msg, audio, sr = validate_reference_audio_array(raw, sr)
+    return is_valid, error_msg, audio, sr, warnings
+
+
+async def analyze_profile_sample(sample_id: str, db: Session) -> dict | None:
+    """Measure a stored sample; None when the sample does not exist."""
+    import asyncio
+
+    sample = db.query(DBProfileSample).filter_by(id=sample_id).first()
+    if not sample:
+        return None
+    path = config.resolve_storage_path(sample.audio_path)
+    audio, sr = await asyncio.to_thread(load_audio, str(path))
+    analysis = analyze_reference_audio(audio, sr)
+    analysis["sample_id"] = sample.id
+    analysis["warnings"] = reference_audio_warnings(analysis, include_edges=False)
+    return analysis
 
 
 async def get_profile(

@@ -338,8 +338,22 @@ def validate_and_load_reference_audio(
     """
     try:
         audio, sr = load_audio(audio_path)
-        audio = preprocess_reference_audio(audio, sr)
-        duration = len(audio) / sr
+    except Exception as e:
+        return False, f"Error validating audio: {e!s}", None, None
+    return validate_reference_audio_array(audio, sr, min_duration, max_duration, min_rms)
+
+
+def validate_reference_audio_array(
+    audio: np.ndarray,
+    sample_rate: int,
+    min_duration: float = 2.0,
+    max_duration: float = 30.0,
+    min_rms: float = 0.01,
+) -> tuple[bool, str | None, np.ndarray | None, int | None]:
+    """Preprocess an already-loaded reference clip and run the duration/level checks."""
+    try:
+        audio = preprocess_reference_audio(audio, sample_rate)
+        duration = len(audio) / sample_rate
 
         if duration < min_duration:
             return False, f"Audio too short (minimum {min_duration} seconds)", None, None
@@ -350,6 +364,89 @@ def validate_and_load_reference_audio(
         if rms < min_rms:
             return False, "Audio is too quiet or silent", None, None
 
-        return True, None, audio, sr
+        return True, None, audio, sample_rate
     except Exception as e:
-        return False, f"Error validating audio: {str(e)}", None, None
+        return False, f"Error validating audio: {e!s}", None, None
+
+
+def trim_reference_window(audio: np.ndarray, sample_rate: int, start_s: float | None, end_s: float | None) -> np.ndarray:
+    """Cut *audio* to the [start_s, end_s] window, in seconds from the start of the clip."""
+    duration = len(audio) / sample_rate
+    start = 0.0 if start_s is None else float(start_s)
+    end = duration if end_s is None else float(end_s)
+    if start < 0 or end > duration + 1e-6 or end <= start:
+        raise ValueError(
+            f"Invalid reference window {start:.2f}-{end:.2f} s for a {duration:.2f} s clip"
+        )
+    return audio[int(start * sample_rate) : int(end * sample_rate)]
+
+
+def analyze_reference_audio(audio: np.ndarray, sample_rate: int, silence_db: float = -40.0) -> dict:
+    """Measure what matters for voice cloning: length, level, edges, clipping, speech share.
+
+    ``silence_db`` is an absolute threshold in dBFS; anything below counts as
+    silence for the edge and speech-share measurements.
+    """
+    audio = np.asarray(audio, dtype=np.float32)
+    n = int(audio.size)
+    duration = n / sample_rate if n else 0.0
+    if n == 0:
+        return {
+            "duration_s": 0.0,
+            "leading_silence_s": 0.0,
+            "trailing_silence_s": 0.0,
+            "rms_dbfs": -120.0,
+            "peak": 0.0,
+            "clipping_ratio": 0.0,
+            "speech_ratio": 0.0,
+        }
+    threshold = 10 ** (silence_db / 20)
+    loud = np.flatnonzero(np.abs(audio) > threshold)
+    leading = loud[0] / sample_rate if loud.size else duration
+    trailing = (n - 1 - loud[-1]) / sample_rate if loud.size else duration
+    rms = float(np.sqrt(np.mean(audio**2)))
+    frame = max(1, int(0.02 * sample_rate))
+    frames = audio[: n - n % frame].reshape(-1, frame) if n >= frame else audio.reshape(1, -1)
+    speech_ratio = float(np.mean(np.abs(frames).max(axis=1) > threshold))
+    return {
+        "duration_s": round(duration, 3),
+        "leading_silence_s": round(float(leading), 3),
+        "trailing_silence_s": round(float(trailing), 3),
+        "rms_dbfs": round(20 * np.log10(rms), 1) if rms > 0 else -120.0,
+        "peak": round(float(np.abs(audio).max()), 3),
+        "clipping_ratio": float(np.mean(np.abs(audio) >= 0.99)),
+        "speech_ratio": round(speech_ratio, 3),
+    }
+
+
+def reference_audio_warnings(analysis: dict, include_edges: bool = True) -> list[str]:
+    """Human-readable warnings for a reference clip; empty when it looks good.
+
+    Thresholds follow what the clone actually needs: 10-15 s of expressive
+    speech, a healthy level around -20 dBFS, no clipping and a clean ending.
+    ``include_edges`` is False when analysing a stored sample, whose edges the
+    app already trimmed.
+    """
+    warnings: list[str] = []
+    duration = analysis["duration_s"]
+    if duration > 20:
+        warnings.append(
+            f"Long reference ({duration:.1f} s): 10-15 s of expressive speech clones best; longer clips do not improve it."
+        )
+    elif duration < 6:
+        warnings.append(f"Short reference ({duration:.1f} s): aim for 10-15 s of speech.")
+    if analysis["rms_dbfs"] < -28:
+        warnings.append(
+            f"Quiet recording ({analysis['rms_dbfs']:.0f} dBFS): record closer to the microphone or louder; around -20 dBFS is ideal."
+        )
+    if analysis["clipping_ratio"] > 0.0005:
+        warnings.append(
+            f"Clipping detected ({analysis['clipping_ratio'] * 100:.2f}% of samples at full scale): lower the input gain and record again."
+        )
+    if analysis["speech_ratio"] < 0.5:
+        warnings.append("More than half of the clip is silence: trim the pauses or record continuous speech.")
+    if include_edges and analysis["trailing_silence_s"] < 0.2:
+        warnings.append(
+            "The clip ends abruptly: leave about half a second of silence after the last word so the clone does not inherit a cut-off."
+        )
+    return warnings

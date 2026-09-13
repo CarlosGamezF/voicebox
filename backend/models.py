@@ -64,6 +64,20 @@ class ProfileSampleUpdate(BaseModel):
     reference_text: str = Field(..., min_length=1, max_length=1000)
 
 
+class ReferenceAnalysisResponse(BaseModel):
+    """Measurements and warnings for a stored voice sample."""
+
+    sample_id: str
+    duration_s: float
+    leading_silence_s: float
+    trailing_silence_s: float
+    rms_dbfs: float
+    peak: float
+    clipping_ratio: float
+    speech_ratio: float
+    warnings: list[str] = Field(default_factory=list)
+
+
 class ProfileSampleResponse(BaseModel):
     """Response model for profile sample."""
 
@@ -71,6 +85,9 @@ class ProfileSampleResponse(BaseModel):
     profile_id: str
     audio_path: str
     reference_text: str
+    # Quality hints about the uploaded clip (length, level, clipping, ending);
+    # empty when it looks good. Only populated on upload.
+    warnings: list[str] = Field(default_factory=list)
 
     class Config:
         from_attributes = True

@@ -155,9 +155,16 @@ async def add_profile_sample(
     profile_id: str,
     file: UploadFile = File(...),
     reference_text: str = Form(...),
+    start_s: float | None = Form(None),
+    end_s: float | None = Form(None),
     db: Session = Depends(get_db),
 ):
-    """Add a sample to a voice profile."""
+    """Add a sample to a voice profile.
+
+    ``start_s``/``end_s`` optionally keep only that window of the upload, so a
+    long recording can be cut to the 10-15 s that clone best. The response
+    carries quality warnings about the clip as recorded.
+    """
     _allowed_audio_exts = {".wav", ".mp3", ".m4a", ".ogg", ".flac", ".aac", ".webm", ".opus"}
     _uploaded_ext = Path(file.filename or "").suffix.lower()
     file_suffix = _uploaded_ext if _uploaded_ext in _allowed_audio_exts else ".wav"
@@ -181,6 +188,8 @@ async def add_profile_sample(
             tmp_path,
             reference_text,
             db,
+            start_s=start_s,
+            end_s=end_s,
         )
         return sample
     except ValueError as e:
@@ -189,6 +198,15 @@ async def add_profile_sample(
         raise HTTPException(status_code=500, detail=f"Failed to process audio file: {str(e)}")
     finally:
         Path(tmp_path).unlink(missing_ok=True)
+
+
+@router.get("/profiles/samples/{sample_id}/analysis", response_model=models.ReferenceAnalysisResponse)
+async def analyze_profile_sample(sample_id: str, db: Session = Depends(get_db)):
+    """Measure a stored voice sample (length, level, edges, clipping) with quality warnings."""
+    analysis = await profiles.analyze_profile_sample(sample_id, db)
+    if analysis is None:
+        raise HTTPException(status_code=404, detail="Sample not found")
+    return analysis
 
 
 @router.get("/profiles/{profile_id}/samples", response_model=list[models.ProfileSampleResponse])
