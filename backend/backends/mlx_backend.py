@@ -3,7 +3,6 @@ MLX backend implementation for TTS and STT using mlx-audio.
 """
 
 from typing import Optional, List, Tuple
-import asyncio
 import logging
 import numpy as np
 from pathlib import Path
@@ -20,6 +19,7 @@ ensure_original_qwen_config_cached()
 from . import TTSBackend, STTBackend, LANGUAGE_CODE_TO_NAME, WHISPER_HF_REPOS
 from .base import is_model_cached, combine_voice_prompts as _combine_voice_prompts, model_load_progress
 from ..utils.cache import get_cache_key, get_cached_voice_prompt, cache_voice_prompt
+from ..utils.mlx_executor import run_in_mlx_executor
 
 
 class MLXTTSBackend:
@@ -81,8 +81,8 @@ class MLXTTSBackend:
         if self.model is not None and self._current_model_size != model_size:
             self.unload_model()
 
-        # Run blocking load in thread pool
-        await asyncio.to_thread(self._load_model_sync, model_size)
+        # Run blocking load on the dedicated MLX thread
+        await run_in_mlx_executor(self._load_model_sync, model_size)
 
     # Alias for compatibility
     load_model = load_model_async
@@ -258,8 +258,8 @@ class MLXTTSBackend:
 
             return audio, sample_rate
 
-        # Run blocking inference in thread pool
-        audio, sample_rate = await asyncio.to_thread(_generate_sync)
+        # Run blocking inference on the dedicated MLX thread
+        audio, sample_rate = await run_in_mlx_executor(_generate_sync)
 
         return audio, sample_rate
 
@@ -292,8 +292,8 @@ class MLXSTTBackend:
         if self.model is not None and self.model_size == model_size:
             return
 
-        # Run blocking load in thread pool
-        await asyncio.to_thread(self._load_model_sync, model_size)
+        # Run blocking load on the dedicated MLX thread
+        await run_in_mlx_executor(self._load_model_sync, model_size)
 
     # Alias for compatibility
     load_model = load_model_async
@@ -363,5 +363,5 @@ class MLXSTTBackend:
             else:
                 return str(result).strip()
 
-        # Run blocking transcription in thread pool
-        return await asyncio.to_thread(_transcribe_sync)
+        # Run blocking transcription on the dedicated MLX thread
+        return await run_in_mlx_executor(_transcribe_sync)

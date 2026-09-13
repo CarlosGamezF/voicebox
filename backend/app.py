@@ -110,6 +110,7 @@ from urllib.parse import quote
 from . import __version__, config, database
 from .services import tts, transcribe, llm
 from .database import get_db
+from .utils.mlx_executor import shutdown_mlx_executor
 from .utils.platform_detect import get_backend_type
 from .utils.progress import get_progress_manager
 from .services.task_queue import create_background_task, init_queue
@@ -371,6 +372,7 @@ async def _run_shutdown() -> None:
         llm.unload_llm_model()
     except Exception:
         logger.exception("Failed to unload LLM model")
+    shutdown_mlx_executor()
 
 
 app = create_app()
