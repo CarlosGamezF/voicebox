@@ -16,7 +16,7 @@ from sqlalchemy.orm import sessionmaker
 import backend.routes.generations as generations
 from backend.database import Base, Generation, VoiceProfile
 from backend.database.migrations import _migrate_generations
-from backend.services import history
+from backend.services import history, settings as settings_service
 
 
 def test_migration_adds_the_replay_columns(tmp_path):
@@ -122,12 +122,35 @@ async def test_regenerate_replays_the_stored_settings(db, captured_run):
 
 
 async def test_legacy_rows_fall_back_to_the_persisted_settings(db, captured_run):
-    # A row written before the columns existed: every value is NULL.
+    # A row written before the columns existed: every value is NULL. The
+    # persisted settings differ from the schema defaults so the test can tell
+    # the two apart.
+    settings_service.update_generation_settings(db, {"max_chunk_chars": 550, "crossfade_ms": 80, "normalize_audio": False})
     _row(db, "failed")
 
     await generations.retry_generation("g1", db)
 
-    # The settings row is created lazily with the schema defaults.
-    assert captured_run["max_chunk_chars"] == 800
-    assert captured_run["crossfade_ms"] == 50
+    assert captured_run["max_chunk_chars"] == 550
+    assert captured_run["crossfade_ms"] == 80
+    assert captured_run["normalize"] is False
+
+
+async def test_partially_legacy_row_fills_only_the_missing_value(db, captured_run):
+    settings_service.update_generation_settings(db, {"normalize_audio": False})
+    _row(db, "failed", max_chunk_chars=300, crossfade_ms=120)
+
+    await generations.retry_generation("g1", db)
+
+    assert (captured_run["max_chunk_chars"], captured_run["crossfade_ms"]) == (300, 120)
+    assert captured_run["normalize"] is False
+
+
+async def test_regenerate_of_a_legacy_row_keeps_normalising(db, captured_run):
+    # Before the columns existed regenerate always normalised; a NULL flag on
+    # regenerate keeps that behaviour instead of following the current setting.
+    settings_service.update_generation_settings(db, {"normalize_audio": False})
+    _row(db, "completed")
+
+    await generations.regenerate_generation("g1", db)
+
     assert captured_run["normalize"] is True

@@ -149,19 +149,29 @@ async def generate_speech(
     return generation
 
 
-def _replay_settings(gen: DBGeneration, db: Session) -> dict:
+def _replay_settings(gen: DBGeneration, db: Session, *, mode: str) -> dict[str, int | bool]:
     """Chunking and normalisation to reuse when re-running a take.
 
-    Values stored on the row win; rows written before the columns existed
+    Values stored on the row win. Rows written before the columns existed
     fall back to the persisted generation settings, never to the schema
-    defaults, so a retry or regenerate keeps the user's chunking.
+    defaults; regenerate always normalised back then, so a missing flag keeps
+    doing so.
     """
-    settings = get_generation_settings(db)
-    return {
-        "max_chunk_chars": gen.max_chunk_chars if gen.max_chunk_chars is not None else settings.max_chunk_chars,
-        "crossfade_ms": gen.crossfade_ms if gen.crossfade_ms is not None else settings.crossfade_ms,
-        "normalize": gen.normalize if gen.normalize is not None else settings.normalize_audio,
+    values: dict = {
+        "max_chunk_chars": gen.max_chunk_chars,
+        "crossfade_ms": gen.crossfade_ms,
+        "normalize": gen.normalize,
     }
+    if all(value is not None for value in values.values()):
+        return values
+    settings = get_generation_settings(db)
+    if values["max_chunk_chars"] is None:
+        values["max_chunk_chars"] = settings.max_chunk_chars
+    if values["crossfade_ms"] is None:
+        values["crossfade_ms"] = settings.crossfade_ms
+    if values["normalize"] is None:
+        values["normalize"] = True if mode == "regenerate" else settings.normalize_audio
+    return values
 
 
 @router.post("/generate/{generation_id}/retry", response_model=models.GenerationResponse)
@@ -200,7 +210,7 @@ async def retry_generation(generation_id: str, db: Session = Depends(get_db)):
             seed=gen.seed,
             instruct=gen.instruct,
             mode="retry",
-            **_replay_settings(gen, db),
+            **_replay_settings(gen, db, mode="retry"),
         )
     )
 
@@ -246,7 +256,7 @@ async def regenerate_generation(generation_id: str, db: Session = Depends(get_db
             instruct=gen.instruct,
             mode="regenerate",
             version_id=version_id,
-            **_replay_settings(gen, db),
+            **_replay_settings(gen, db, mode="regenerate"),
         )
     )
 

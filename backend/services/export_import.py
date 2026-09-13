@@ -302,6 +302,9 @@ def export_generation_to_zip(generation_id: str, db: Session) -> bytes:
                 "duration": generation.duration,
                 "seed": generation.seed,
                 "instruct": generation.instruct,
+                "max_chunk_chars": generation.max_chunk_chars,
+                "crossfade_ms": generation.crossfade_ms,
+                "normalize": generation.normalize,
                 "created_at": generation.created_at.isoformat(),
             },
             "profile": {
@@ -432,6 +435,9 @@ async def import_generation_from_zip(file_bytes: bytes, db: Session) -> dict:
                     duration=generation_data["duration"],
                     seed=generation_data.get("seed"),
                     instruct=generation_data.get("instruct"),
+                    max_chunk_chars=generation_data.get("max_chunk_chars"),
+                    crossfade_ms=generation_data.get("crossfade_ms"),
+                    normalize=generation_data.get("normalize"),
                     created_at=datetime.utcnow(),
                 )
                 

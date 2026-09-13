@@ -93,8 +93,8 @@ async def run_generation(
 
         audio, sample_rate = await generate_chunked(tts_model, text, voice_prompt, **gen_kwargs)
 
-        # --- Normalize when the take asks for it (retry/regenerate replay
-        # the original setting instead of forcing it) -------------------
+        # Normalise only when the take asks for it: retry and regenerate
+        # replay the original setting instead of forcing it.
         if normalize:
             audio = normalize_audio(audio)
 

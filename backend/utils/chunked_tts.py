@@ -71,22 +71,23 @@ _ABBREVIATIONS = frozenset(
         "uds",
         "vd",
         "vds",
-        "núm",
-        "nº",
-        "pág",
-        "págs",
-        "tel",
-        "av",
         "avda",
         "dpto",
         "aprox",
-        "art",
-        "cap",
-        "fig",
-        "vol",
         "ej",
+        # Doubled-letter plurals: EE. UU., FF. CC.
+        "ee",
+        "uu",
+        "ff",
+        "cc",
     }
 )
+
+# Abbreviations that are also ordinary words ("a work of art.") and only
+# abbreviate when a number or Roman numeral follows: art. 5, cap. 3, vol. IV.
+_NUMBER_ABBREVIATIONS = frozenset({"art", "cap", "fig", "vol", "pág", "págs", "núm", "nº", "tel", "pp"})
+_NUMBER_AFTER_RE = re.compile(r"\s*(\d|[IVXLCDM]+\b)")
+_INITIAL_AFTER_RE = re.compile(r"\s*[A-ZÁÉÍÓÚÑ]\.")
 
 # A sentence end: terminal punctuation (runs like "..." included), then any
 # closing quotes or brackets that belong to the sentence, then whitespace
@@ -98,33 +99,37 @@ _SENTENCE_END_RE = re.compile(r"[.!?\u2026]+([\"\u00bb\u201d\u2019')\]]*)(?=\s|$
 _PARA_TAG_RE = re.compile(r"\[[^\]]*\]")
 
 
-def split_text_into_chunks(text: str, max_chars: int = DEFAULT_MAX_CHUNK_CHARS) -> list[str]:
+def split_text_into_chunks(
+    text: str, max_chars: int = DEFAULT_MAX_CHUNK_CHARS, merge_tiny: bool = True
+) -> list[str]:
     """Split *text* at natural boundaries into chunks of at most *max_chars*.
 
-    Paragraph breaks (a blank line) are always chunk boundaries and single
-    newlines inside a paragraph become spaces, so the model never receives
-    a raw newline. Within a paragraph the priority is sentence-end (``.!?…``
-    plus any closing quote, not after an abbreviation or an initial and not
-    inside brackets) → clause boundary (``;:,—``) → whitespace → hard cut.
-    Chunks shorter than ``MIN_CHUNK_CHARS`` are merged into a neighbour when
-    the result still fits.
+    Paragraph breaks (a blank line) are chunk boundaries and single newlines
+    inside a paragraph become spaces, so the model never receives a raw
+    newline. Within a paragraph the priority is sentence-end (``.!?…`` plus
+    any closing quote, not after an abbreviation, a list marker or an
+    initial, and not inside brackets) → clause boundary (``;:,—``) →
+    whitespace → hard cut. With *merge_tiny*, chunks shorter than
+    ``MIN_CHUNK_CHARS`` are folded into a neighbour when the result still
+    fits, across paragraphs too (a one-word line of dialogue is not a take).
 
     Paralinguistic tags like ``[laugh]`` are treated as atomic and will not
     be split across chunks.
     """
     chunks: list[str] = []
     for paragraph in _split_paragraphs(text):
-        chunks.extend(_merge_tiny_chunks(_split_paragraph(paragraph, max_chars), max_chars))
-    return chunks
+        chunks.extend(_split_paragraph(paragraph, max_chars))
+    return _merge_tiny_chunks(chunks, max_chars) if merge_tiny else chunks
 
 
 def _split_paragraphs(text: str) -> list[str]:
     """Blank-line separated paragraphs, each with inner newlines collapsed."""
-    paragraphs = re.split(r"\n\s*\n", text)
+    paragraphs = re.split(r"\n\s*\n", text.replace("\r\n", "\n"))
     return [re.sub(r"\s*\n\s*", " ", p).strip() for p in paragraphs if p.strip()]
 
 
 def _split_paragraph(text: str, max_chars: int) -> list[str]:
+    """Cut one paragraph into chunks of at most *max_chars* at the best boundary in each window."""
     text = text.strip()
     if not text:
         return []
@@ -163,16 +168,24 @@ def _split_paragraph(text: str, max_chars: int) -> list[str]:
 
 
 def _merge_tiny_chunks(chunks: list[str], max_chars: int, min_chars: int = MIN_CHUNK_CHARS) -> list[str]:
-    """Fold chunks shorter than *min_chars* into a neighbour when the result fits."""
+    """Fold chunks shorter than *min_chars* into the previous chunk, else the next, when the result fits."""
     merged: list[str] = []
+    pending: str | None = None
     for chunk in chunks:
-        if merged and len(chunk) < min_chars and len(merged[-1]) + 1 + len(chunk) <= max_chars:
+        if pending is not None:
+            if len(pending) + 1 + len(chunk) <= max_chars:
+                chunk = f"{pending} {chunk}"
+            else:
+                merged.append(pending)
+            pending = None
+        if len(chunk) >= min_chars:
+            merged.append(chunk)
+        elif merged and len(merged[-1]) + 1 + len(chunk) <= max_chars:
             merged[-1] = f"{merged[-1]} {chunk}"
         else:
-            merged.append(chunk)
-    if len(merged) > 1 and len(merged[0]) < min_chars and len(merged[0]) + 1 + len(merged[1]) <= max_chars:
-        merged[1] = f"{merged[0]} {merged[1]}"
-        merged.pop(0)
+            pending = chunk
+    if pending is not None:
+        merged.append(pending)
     return merged
 
 
@@ -204,14 +217,45 @@ def _find_last_sentence_end(text: str) -> int:
 
 
 def _period_is_abbreviation(text: str, pos: int) -> bool:
-    """True when the period at *pos* follows an abbreviation or an initial."""
-    word_start = pos - 1
-    while word_start >= 0 and (text[word_start].isalpha() or text[word_start] in "ºª"):
-        word_start -= 1
-    word = text[word_start + 1 : pos].lower()
-    if not word:
+    """True when the period at *pos* does not end a sentence.
+
+    Covers abbreviations (``Sra.``, ``etc.``), number-referencing ones only
+    when a number follows (``art. 5`` but not ``a work of art.``), list
+    markers (``1.``, never years like ``1990.``) and initials (``J. R.``,
+    ``p. ej.``, ``D. Manuel``) while keeping ``plan B.`` or ``vitamina C.``
+    as sentence ends.
+    """
+    token_start = pos
+    while token_start > 0 and (text[token_start - 1].isalnum() or text[token_start - 1] in "ºª"):
+        token_start -= 1
+    token = text[token_start:pos]
+    if not token:
         return False
-    return word in _ABBREVIATIONS or len(word) == 1
+    after = text[pos + 1 :]
+    if token.isdigit():
+        before = text[token_start - 1] if token_start > 0 else ""
+        return len(token) <= 2 and (before == "" or before.isspace() or before == ":")
+    low = token.lower()
+    if low in _NUMBER_ABBREVIATIONS:
+        return bool(_NUMBER_AFTER_RE.match(after))
+    if low in _ABBREVIATIONS:
+        return True
+    if len(token) == 1 and token.isalpha():
+        return _single_letter_is_initial(text, token, token_start, after)
+    return False
+
+
+def _single_letter_is_initial(text: str, token: str, token_start: int, after: str) -> bool:
+    if token.islower() or token == "D":
+        return True
+    previous = text[:token_start].rstrip()
+    chained = (
+        len(previous) >= 2
+        and previous[-1] == "."
+        and previous[-2].isupper()
+        and (len(previous) == 2 or not previous[-3].isalnum())
+    )
+    return chained or bool(_INITIAL_AFTER_RE.match(after))
 
 
 def _find_last_clause_boundary(text: str) -> int:
@@ -374,7 +418,7 @@ async def generate_chunked(
                 )
 
             retry_max_chars = max(MIN_RUNAWAY_RETRY_CHARS, len(chunk_text) // 2)
-            retry_chunks = split_text_into_chunks(chunk_text, retry_max_chars)
+            retry_chunks = split_text_into_chunks(chunk_text, retry_max_chars, merge_tiny=False)
             if len(retry_chunks) <= 1:
                 raise RuntimeError("Unable to split unstable TTS output for retry")
 
@@ -414,9 +458,11 @@ async def generate_chunked(
     dump_dir = _chunk_dump_dir(text, seed)
 
     if len(chunks) <= 1:
-        # Short text — single-shot fast path
-        audio, sample_rate = await generate_one(text, seed)
-        _dump_chunk(dump_dir, 0, text, audio, sample_rate)
+        # Short text — single-shot fast path, on the normalised text so a
+        # raw newline never reaches the model.
+        single = chunks[0] if chunks else text
+        audio, sample_rate = await generate_one(single, seed)
+        _dump_chunk(dump_dir, 0, single, audio, sample_rate)
         return audio, sample_rate
 
     # Long text — chunked generation
