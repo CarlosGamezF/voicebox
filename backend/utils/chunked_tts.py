@@ -28,6 +28,9 @@ logger = logging.getLogger("voicebox.chunked-tts")
 DEFAULT_MAX_CHUNK_CHARS = 800
 MAX_RUNAWAY_RETRIES = 2
 MIN_RUNAWAY_RETRY_CHARS = 100
+# Chunks shorter than this are merged into a neighbour when the result still
+# fits: Qwen renders two- or three-word tail chunks with odd prosody.
+MIN_CHUNK_CHARS = 40
 
 # Common abbreviations that should NOT be treated as sentence endings.
 # Lowercase for case-insensitive matching.
@@ -58,30 +61,77 @@ _ABBREVIATIONS = frozenset(
         "u.s",
         "u.s.a",
         "u.k",
+        # Spanish
+        "sra",
+        "srta",
+        "dra",
+        "dres",
+        "dña",
+        "ud",
+        "uds",
+        "vd",
+        "vds",
+        "núm",
+        "nº",
+        "pág",
+        "págs",
+        "tel",
+        "av",
+        "avda",
+        "dpto",
+        "aprox",
+        "art",
+        "cap",
+        "fig",
+        "vol",
+        "ej",
     }
 )
+
+# A sentence end: terminal punctuation (runs like "..." included), then any
+# closing quotes or brackets that belong to the sentence, then whitespace
+# or the end of the text.
+_SENTENCE_END_RE = re.compile(r"[.!?\u2026]+([\"\u00bb\u201d\u2019')\]]*)(?=\s|$)")
 
 # Paralinguistic tags used by Chatterbox Turbo.  The splitter must never
 # cut inside one of these.
 _PARA_TAG_RE = re.compile(r"\[[^\]]*\]")
 
 
-def split_text_into_chunks(text: str, max_chars: int = DEFAULT_MAX_CHUNK_CHARS) -> List[str]:
+def split_text_into_chunks(text: str, max_chars: int = DEFAULT_MAX_CHUNK_CHARS) -> list[str]:
     """Split *text* at natural boundaries into chunks of at most *max_chars*.
 
-    Priority: sentence-end (``.!?`` not preceded by an abbreviation and not
+    Paragraph breaks (a blank line) are always chunk boundaries and single
+    newlines inside a paragraph become spaces, so the model never receives
+    a raw newline. Within a paragraph the priority is sentence-end (``.!?…``
+    plus any closing quote, not after an abbreviation or an initial and not
     inside brackets) → clause boundary (``;:,—``) → whitespace → hard cut.
+    Chunks shorter than ``MIN_CHUNK_CHARS`` are merged into a neighbour when
+    the result still fits.
 
     Paralinguistic tags like ``[laugh]`` are treated as atomic and will not
     be split across chunks.
     """
+    chunks: list[str] = []
+    for paragraph in _split_paragraphs(text):
+        chunks.extend(_merge_tiny_chunks(_split_paragraph(paragraph, max_chars), max_chars))
+    return chunks
+
+
+def _split_paragraphs(text: str) -> list[str]:
+    """Blank-line separated paragraphs, each with inner newlines collapsed."""
+    paragraphs = re.split(r"\n\s*\n", text)
+    return [re.sub(r"\s*\n\s*", " ", p).strip() for p in paragraphs if p.strip()]
+
+
+def _split_paragraph(text: str, max_chars: int) -> list[str]:
     text = text.strip()
     if not text:
         return []
     if len(text) <= max_chars:
         return [text]
 
-    chunks: List[str] = []
+    chunks: list[str] = []
     remaining = text
 
     while remaining:
@@ -112,39 +162,56 @@ def split_text_into_chunks(text: str, max_chars: int = DEFAULT_MAX_CHUNK_CHARS) 
     return chunks
 
 
-def _find_last_sentence_end(text: str) -> int:
-    """Return the index of the last sentence-ending punctuation in *text*.
+def _merge_tiny_chunks(chunks: list[str], max_chars: int, min_chars: int = MIN_CHUNK_CHARS) -> list[str]:
+    """Fold chunks shorter than *min_chars* into a neighbour when the result fits."""
+    merged: list[str] = []
+    for chunk in chunks:
+        if merged and len(chunk) < min_chars and len(merged[-1]) + 1 + len(chunk) <= max_chars:
+            merged[-1] = f"{merged[-1]} {chunk}"
+        else:
+            merged.append(chunk)
+    if len(merged) > 1 and len(merged[0]) < min_chars and len(merged[0]) + 1 + len(merged[1]) <= max_chars:
+        merged[1] = f"{merged[0]} {merged[1]}"
+        merged.pop(0)
+    return merged
 
-    Skips periods that follow common abbreviations (``Dr.``, ``Mr.``, etc.)
-    and periods inside bracket tags (``[laugh]``).  Also handles CJK
-    sentence-ending punctuation (``。！？``).
+
+def _find_last_sentence_end(text: str) -> int:
+    """Return the index of the last character of the last sentence end in *text*.
+
+    That character is the terminal punctuation or the closing quote that
+    follows it (``«¿Vienes?»`` ends at ``»``). Periods after abbreviations
+    (``Dr.``, ``Sra.``, ``núm.``), after single-letter initials (``J. R.``,
+    ``p. ej.``) and inside bracket tags (``[laugh]``) are skipped. A period
+    after a number is a boundary when whitespace follows it (``en 1990.
+    Luego``); decimals such as ``3.5`` never match because no whitespace
+    follows the period. CJK sentence-ending punctuation (``。！？``) counts too.
     """
     best = -1
-    # ASCII sentence ends
-    for m in re.finditer(r"[.!?](?:\s|$)", text):
+    for m in _SENTENCE_END_RE.finditer(text):
         pos = m.start()
-        char = text[pos]
-        # Skip periods after abbreviations
-        if char == ".":
-            # Walk backwards to find the preceding word
-            word_start = pos - 1
-            while word_start >= 0 and text[word_start].isalpha():
-                word_start -= 1
-            word = text[word_start + 1 : pos].lower()
-            if word in _ABBREVIATIONS:
-                continue
-            # Skip decimal numbers (digit immediately before the period)
-            if word_start >= 0 and text[word_start].isdigit():
-                continue
-        # Skip if we're inside a bracket tag
+        run = m.group(0)[: len(m.group(0)) - len(m.group(1))]
+        if run == "." and _period_is_abbreviation(text, pos):
+            continue
         if _inside_bracket_tag(text, pos):
             continue
-        best = pos
+        best = m.end() - 1
     # CJK sentence-ending punctuation
     for m in re.finditer(r"[\u3002\uff01\uff1f]", text):
         if m.start() > best:
             best = m.start()
     return best
+
+
+def _period_is_abbreviation(text: str, pos: int) -> bool:
+    """True when the period at *pos* follows an abbreviation or an initial."""
+    word_start = pos - 1
+    while word_start >= 0 and (text[word_start].isalpha() or text[word_start] in "ºª"):
+        word_start -= 1
+    word = text[word_start + 1 : pos].lower()
+    if not word:
+        return False
+    return word in _ABBREVIATIONS or len(word) == 1
 
 
 def _find_last_clause_boundary(text: str) -> int:
