@@ -42,43 +42,55 @@ fn main() {
             println!("cargo:rerun-if-changed={}/icon.json", icon_source);
             println!("cargo:rerun-if-changed={}/Assets", icon_source);
 
-            let partial_plist = format!("{}/partial.plist", gen_dir);
-            let output = Command::new("xcrun")
-                .args([
-                    "actool",
-                    "--compile",
-                    &gen_dir,
-                    "--output-format",
-                    "human-readable-text",
-                    "--output-partial-info-plist",
-                    &partial_plist,
-                    "--app-icon",
-                    "voicebox",
-                    "--include-all-app-icons",
-                    "--target-device",
-                    "mac",
-                    "--minimum-deployment-target",
-                    "11.0",
-                    "--platform",
-                    "macosx",
-                    &icon_source,
-                ])
-                .output();
+            // actool ships with full Xcode only. With just the Command Line
+            // Tools the Liquid Glass icon (Assets.car) is skipped and the
+            // bundle falls back to voicebox.icns generated below.
+            let has_actool = Command::new("xcrun")
+                .args(["--find", "actool"])
+                .output()
+                .map(|o| o.status.success())
+                .unwrap_or(false);
+            if has_actool {
+                let partial_plist = format!("{}/partial.plist", gen_dir);
+                let output = Command::new("xcrun")
+                    .args([
+                        "actool",
+                        "--compile",
+                        &gen_dir,
+                        "--output-format",
+                        "human-readable-text",
+                        "--output-partial-info-plist",
+                        &partial_plist,
+                        "--app-icon",
+                        "voicebox",
+                        "--include-all-app-icons",
+                        "--target-device",
+                        "mac",
+                        "--minimum-deployment-target",
+                        "11.0",
+                        "--platform",
+                        "macosx",
+                        &icon_source,
+                    ])
+                    .output();
 
-            match output {
-                Ok(output) => {
-                    if !output.status.success() {
-                        eprintln!("actool stderr: {}", String::from_utf8_lossy(&output.stderr));
-                        eprintln!("actool stdout: {}", String::from_utf8_lossy(&output.stdout));
-                        panic!("actool failed to compile icon");
+                match output {
+                    Ok(output) => {
+                        if !output.status.success() {
+                            eprintln!("actool stderr: {}", String::from_utf8_lossy(&output.stderr));
+                            eprintln!("actool stdout: {}", String::from_utf8_lossy(&output.stdout));
+                            panic!("actool failed to compile icon");
+                        }
+                        println!("Successfully compiled icon to {}", gen_dir);
                     }
-                    println!("Successfully compiled icon to {}", gen_dir);
+                    Err(e) => {
+                        eprintln!("Failed to execute xcrun actool: {}", e);
+                        eprintln!("Make sure you have Xcode Command Line Tools installed");
+                        panic!("Icon compilation failed");
+                    }
                 }
-                Err(e) => {
-                    eprintln!("Failed to execute xcrun actool: {}", e);
-                    eprintln!("Make sure you have Xcode Command Line Tools installed");
-                    panic!("Icon compilation failed");
-                }
+            } else {
+                println!("cargo:warning=actool not found (Xcode Command Line Tools only); skipping Assets.car");
             }
 
             // Generate voicebox.icns from the source PNG via sips + iconutil
