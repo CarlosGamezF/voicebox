@@ -49,7 +49,7 @@ def test_not_a_sentence_end(text):
 
 
 @pytest.mark.parametrize(
-    "text, marker",
+    ("text", "marker"),
     [
         ("Dije que no. Punto", "no."),
         ("Nació en 1990. Luego", "1990."),
