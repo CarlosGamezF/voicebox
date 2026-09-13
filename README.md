@@ -306,6 +306,8 @@ curl http://127.0.0.1:17493/profiles
 
 `POST /speak` accepts `profile` as a name (case-insensitive) or id, and resolves via the same precedence as the MCP tool: explicit arg → per-client binding → `capture_settings.default_playback_voice_id`.
 
+When `language` is omitted, `/speak` and the MCP `voicebox.speak` tool use the profile's language (then `en`), and both apply the persisted generation settings (chunk size, crossfade, normalisation) that the desktop form sends. `POST /transcribe` and MCP `voicebox.transcribe` default `model` to the configured STT model when it is already downloaded, otherwise to the currently loaded size.
+
 ### MCP server
 
 Voicebox ships a built-in **Model Context Protocol** server so any MCP-aware agent (Claude Code, Cursor, Windsurf, Cline, VS Code MCP extensions) can speak, transcribe, and browse captures and profiles.

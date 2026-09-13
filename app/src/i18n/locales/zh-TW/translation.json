@@ -337,7 +337,7 @@
   },
   "audioSample": {
     "chooseFile": "選擇檔案",
-    "uploadHint": "點選以選擇檔案或拖放。最大時長:30 秒。",
+    "uploadHint": "點選以選擇檔案或拖放。建議 10-15 秒富有表現力的語音，結尾乾淨；最長 30 秒。",
     "fileUploaded": "檔案已上傳",
     "fileLabel": "檔案:{{name}}",
     "play": "播放",
@@ -346,7 +346,7 @@
     "transcribing": "轉錄中…",
     "remove": "移除",
     "startRecording": "開始錄製",
-    "recordHint": "點選以開始錄製。最大時長:30 秒。",
+    "recordHint": "點選以開始錄製。建議 10-15 秒富有表現力的語音，結尾乾淨；最長 30 秒。",
     "stopRecording": "停止錄製",
     "remaining": "剩餘 {{time}}",
     "recordingComplete": "錄製完成",
@@ -369,7 +369,7 @@
     "editTranscription": "編輯轉錄",
     "deleteSample": "刪除樣本",
     "addSample": "新增樣本",
-    "note": "注意:單一 30 秒的樣本效果最佳。多個樣本可能會降低品質。未來版本中樣本可能可互換,並為同一聲音的不同風格加上標籤。",
+    "note": "注意:單一 10-15 秒、語調多變、無噪音且結尾乾淨的樣本效果最佳；更長的片段不會改善克隆效果。多個樣本可能會降低品質。未來版本中樣本可能可互換,並為同一聲音的不同風格加上標籤。",
     "deleteDialog": {
       "title": "刪除樣本",
       "description": "確定要刪除此音訊樣本嗎?此操作無法復原。",

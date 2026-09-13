@@ -337,7 +337,7 @@
   },
   "audioSample": {
     "chooseFile": "Escolher Arquivo",
-    "uploadHint": "Clique para escolher um arquivo ou arraste e solte. Duração máxima: 30 segundos.",
+    "uploadHint": "Clique para escolher um arquivo ou arraste e solte. Busque 10-15 segundos de fala expressiva com um final limpo; máximo de 30 segundos.",
     "fileUploaded": "Arquivo enviado",
     "fileLabel": "Arquivo: {{name}}",
     "play": "Reproduzir",
@@ -346,7 +346,7 @@
     "transcribing": "Transcrevendo…",
     "remove": "Remover",
     "startRecording": "Iniciar Gravação",
-    "recordHint": "Clique para iniciar a gravação. Duração máxima: 30 segundos.",
+    "recordHint": "Clique para iniciar a gravação. Busque 10-15 segundos de fala expressiva com um final limpo; máximo de 30 segundos.",
     "stopRecording": "Parar Gravação",
     "remaining": "{{time}} restante",
     "recordingComplete": "Gravação concluída",
@@ -369,7 +369,7 @@
     "editTranscription": "Editar transcrição",
     "deleteSample": "Excluir amostra",
     "addSample": "Adicionar Amostra",
-    "note": "Observação: uma única amostra de 30 segundos é o ponto ideal. A qualidade pode cair com várias amostras. Em uma atualização futura, as amostras poderão ser intercambiáveis e marcadas para variar estilos da mesma voz.",
+    "note": "Observação: uma única amostra de 10-15 segundos com entonação variada, sem ruído e com um final limpo funciona melhor; clipes mais longos não melhoram o clone. A qualidade pode cair com várias amostras. Em uma atualização futura, as amostras poderão ser intercambiáveis e marcadas para variar estilos da mesma voz.",
     "deleteDialog": {
       "title": "Excluir Amostra",
       "description": "Tem certeza de que deseja excluir esta amostra de áudio? Esta ação não pode ser desfeita.",

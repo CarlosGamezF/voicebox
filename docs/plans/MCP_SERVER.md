@@ -226,7 +226,7 @@ async def speak(data: SpeakRequest, request: Request, db: Session = Depends(get_
     profile = resolve_profile(data.profile, client_id, db)
     if profile is None: raise HTTPException(400, "No voice profile resolved.")
     req = GenerationRequest(profile_id=profile.id, text=data.text,
-                            language=data.language or "en",
+                            language=data.language or profile.language or "en",
                             engine=data.engine or "qwen",
                             personality=bool(data.personality))
     return await generate_speech(req, db)

@@ -337,7 +337,7 @@
   },
   "audioSample": {
     "chooseFile": "选择文件",
-    "uploadHint": "点击选择文件或拖放。最大时长:30 秒。",
+    "uploadHint": "点击选择文件或拖放。建议 10-15 秒富有表现力的语音，结尾干净；最长 30 秒。",
     "fileUploaded": "文件已上传",
     "fileLabel": "文件:{{name}}",
     "play": "播放",
@@ -346,7 +346,7 @@
     "transcribing": "转录中…",
     "remove": "移除",
     "startRecording": "开始录制",
-    "recordHint": "点击开始录制。最大时长:30 秒。",
+    "recordHint": "点击开始录制。建议 10-15 秒富有表现力的语音，结尾干净；最长 30 秒。",
     "stopRecording": "停止录制",
     "remaining": "剩余 {{time}}",
     "recordingComplete": "录制完成",
@@ -369,7 +369,7 @@
     "editTranscription": "编辑转录",
     "deleteSample": "删除样本",
     "addSample": "添加样本",
-    "note": "注意:单个 30 秒的样本效果最佳。多个样本可能会降低质量。未来版本中样本可能会变得可互换,并为同一声音的不同风格打标签。",
+    "note": "注意:单个 10-15 秒、语调多变、无噪音且结尾干净的样本效果最佳；更长的片段不会改善克隆效果。多个样本可能会降低质量。未来版本中样本可能会变得可互换,并为同一声音的不同风格打标签。",
     "deleteDialog": {
       "title": "删除样本",
       "description": "确定要删除此音频样本吗?此操作不可撤销。",

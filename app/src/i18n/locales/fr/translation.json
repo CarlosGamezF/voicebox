@@ -337,7 +337,7 @@
   },
   "audioSample": {
     "chooseFile": "Choisir un fichier",
-    "uploadHint": "Cliquez pour choisir un fichier ou glissez-déposez. Durée maximale : 30 secondes.",
+    "uploadHint": "Cliquez pour choisir un fichier ou glissez-déposez. Visez 10-15 secondes de parole expressive avec une fin nette ; 30 secondes maximum.",
     "fileUploaded": "Fichier téléchargé",
     "fileLabel": "Fichier : {{name}}",
     "play": "Lire",
@@ -346,7 +346,7 @@
     "transcribing": "Transcription…",
     "remove": "Retirer",
     "startRecording": "Commencer l'enregistrement",
-    "recordHint": "Cliquez pour commencer l'enregistrement. Durée maximale : 30 secondes.",
+    "recordHint": "Cliquez pour commencer l'enregistrement. Visez 10-15 secondes de parole expressive avec une fin nette ; 30 secondes maximum.",
     "stopRecording": "Arrêter l'enregistrement",
     "remaining": "{{time}} restant",
     "recordingComplete": "Enregistrement terminé",
@@ -369,7 +369,7 @@
     "editTranscription": "Modifier la transcription",
     "deleteSample": "Supprimer l'échantillon",
     "addSample": "Ajouter un échantillon",
-    "note": "Remarque : un seul échantillon de 30 secondes est idéal. La qualité peut diminuer avec plusieurs échantillons. Dans une future mise à jour, les échantillons pourraient être interchangeables et étiquetés pour différents styles d'une même voix.",
+    "note": "Remarque : un seul échantillon de 10-15 secondes avec une intonation variée, sans bruit et avec une fin nette donne les meilleurs résultats ; les clips plus longs n'améliorent pas le clone. La qualité peut diminuer avec plusieurs échantillons. Dans une future mise à jour, les échantillons pourraient être interchangeables et étiquetés pour différents styles d'une même voix.",
     "deleteDialog": {
       "title": "Supprimer l'échantillon",
       "description": "Êtes-vous sûr de vouloir supprimer cet échantillon audio ? Cette action est irréversible.",

@@ -337,7 +337,7 @@
   },
   "audioSample": {
     "chooseFile": "Scegli file",
-    "uploadHint": "Clicca per scegliere un file o trascinalo qui. Durata massima: 30 secondi.",
+    "uploadHint": "Clicca per scegliere un file o trascinalo qui. Punta a 10-15 secondi di parlato espressivo con un finale pulito; massimo 30 secondi.",
     "fileUploaded": "File caricato",
     "fileLabel": "File: {{name}}",
     "play": "Riproduci",
@@ -346,7 +346,7 @@
     "transcribing": "Trascrizione in corso…",
     "remove": "Rimuovi",
     "startRecording": "Avvia registrazione",
-    "recordHint": "Clicca per avviare la registrazione. Durata massima: 30 secondi.",
+    "recordHint": "Clicca per avviare la registrazione. Punta a 10-15 secondi di parlato espressivo con un finale pulito; massimo 30 secondi.",
     "stopRecording": "Interrompi registrazione",
     "remaining": "{{time}} rimanenti",
     "recordingComplete": "Registrazione completata",
@@ -369,7 +369,7 @@
     "editTranscription": "Modifica trascrizione",
     "deleteSample": "Elimina campione",
     "addSample": "Aggiungi campione",
-    "note": "Nota: Un singolo campione di 30 secondi rappresenta la combinazione ideale. La qualità potrebbe diminuire con più campioni. In un aggiornamento futuro, i campioni potrebbero essere intercambiabili e contrassegnati per stili diversi della stessa voce.",
+    "note": "Nota: un singolo campione di 10-15 secondi con intonazione variata, senza rumore e con un finale pulito dà i risultati migliori; i clip più lunghi non migliorano il clone. La qualità potrebbe diminuire con più campioni. In un aggiornamento futuro, i campioni potrebbero essere intercambiabili e contrassegnati per stili diversi della stessa voce.",
     "deleteDialog": {
       "title": "Elimina campione",
       "description": "Sei sicuro di voler eliminare questo campione audio? Questa azione non può essere annullata.",
