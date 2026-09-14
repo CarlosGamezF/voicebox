@@ -16,6 +16,14 @@ Revisión contra `main`, `mlx-audio` 0.4.1 (`mlx_audio/tts/models/qwen3_tts/`) y
 6. **Chunking.** Abreviaturas solo inglesas, nunca se parte tras una cifra, los saltos de párrafo no son frontera y `mlx-audio` vuelve a partir por `\n`. `/speak` y MCP ignoraban el ajuste de 550/80 y retry/regenerar vuelven a 800/50 con semilla aleatoria: no sirven para comparar. Lo primero está corregido en esta rama; lo segundo, pendiente.
 7. **Normalizador.** Recorta en duro al 0,85 de pico entre el 0,01 % y el 0,06 % de las muestras; efecto menor.
 
+## Cómo medir (herramientas ya en la rama)
+
+- `backend/tools/prosody_eval.py`: harness local. Genera por REST un corpus fijo en español con varias semillas por condición, descarga el audio, mide duración, caracteres por segundo, silencios, pausas, nivel y recorte, transcribe con el Whisper configurado y calcula el WER; escribe `results.csv`, `results.json` y pares ciegos A/B con su clave aparte. Ejemplo:
+  `backend/venv/bin/python -m backend.tools.prosody_eval --profile Carlos --seeds 1 2 3 --out ./eval-out --condition chunk550:max_chunk_chars=550 --condition chunk300:max_chunk_chars=300`
+- `VOICEBOX_MLX_ICL_REPETITION_PENALTY=1.2`: variable de entorno experimental del backend MLX que llama a la clonación ICL de `mlx-audio` con esa penalización en vez del mínimo de 1,5. Solo para medir; la propuesta upstream está en `MLX_AUDIO_ICL_REPETITION_PENALTY_PROPOSAL.md`.
+- `VOICEBOX_DUMP_CHUNKS=<dir>`: vuelca cada trozo antes del crossfade para analizar costuras.
+- Nunca comparar con retry ni regenerar: cambian la semilla y el chunking.
+
 ## Problema
 
 El audio generado en español con una voz generada (diseñada por descripción o clonada) suena lineal: entonación plana y acento no nativo. La pregunta era si los modelos de Qwen ofrecen algún control para mejorarlo.

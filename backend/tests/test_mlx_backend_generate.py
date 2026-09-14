@@ -253,3 +253,88 @@ async def test_tokenizer_failure_never_fails_a_take(tmp_path):
     audio, _ = await backend.generate("hola", _prompt(tmp_path), language="es")
 
     assert len(audio) == 2400
+
+
+# Experimental ICL repetition-penalty override (VOICEBOX_MLX_ICL_REPETITION_PENALTY)
+
+
+class _IclModel(_FakeModel):
+    """Fake mlx-audio model that also exposes the private ICL entry point."""
+
+    sample_rate = 24000
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.icl_calls = []
+
+    def _generate_icl(self, text, ref_audio, ref_text, language="auto", **kwargs):
+        self.icl_calls.append({"text": text, "ref_audio": ref_audio, "ref_text": ref_text, "language": language, **kwargs})
+        yield from self._results
+
+
+@pytest.fixture
+def fake_mlx_loader(monkeypatch):
+    from backend.backends import mlx_backend
+
+    loaded = []
+
+    def loader(path, sample_rate):
+        loaded.append((path, sample_rate))
+        return "mx-array"
+
+    monkeypatch.setattr(mlx_backend, "_mlx_load_audio", loader)
+    return loaded
+
+
+async def test_without_the_env_var_the_public_generate_path_is_used(tmp_path, monkeypatch, fake_mlx_loader):
+    monkeypatch.delenv("VOICEBOX_MLX_ICL_REPETITION_PENALTY", raising=False)
+    model = _IclModel()
+    backend = _backend(model)
+
+    await backend.generate("hola", _prompt(tmp_path), language="es")
+
+    assert len(model.calls) == 1
+    assert model.icl_calls == []
+
+
+async def test_env_override_calls_icl_directly_with_the_requested_penalty(tmp_path, monkeypatch, fake_mlx_loader, caplog):
+    monkeypatch.setenv("VOICEBOX_MLX_ICL_REPETITION_PENALTY", "1.1")
+    model = _IclModel()
+    backend = _backend(model)
+    prompt = _prompt(tmp_path, "texto")
+
+    with caplog.at_level(logging.WARNING):
+        audio, _ = await backend.generate("hola", prompt, language="es")
+
+    assert len(audio) == 2400
+    assert model.calls == [], "the public generate() would clamp the penalty to 1.5"
+    call = model.icl_calls[0]
+    assert call["repetition_penalty"] == 1.1
+    assert call["language"] == "spanish"
+    assert call["ref_text"] == "texto"
+    assert call["ref_audio"] == "mx-array"
+    assert fake_mlx_loader == [(prompt["ref_audio"], 24000)]
+    assert any("experimental" in r.getMessage().lower() for r in caplog.records)
+
+
+async def test_invalid_env_value_falls_back_to_the_public_path(tmp_path, monkeypatch, fake_mlx_loader, caplog):
+    monkeypatch.setenv("VOICEBOX_MLX_ICL_REPETITION_PENALTY", "abc")
+    model = _IclModel()
+    backend = _backend(model)
+
+    with caplog.at_level(logging.WARNING):
+        await backend.generate("hola", _prompt(tmp_path), language="es")
+
+    assert len(model.calls) == 1
+    assert model.icl_calls == []
+    assert any("VOICEBOX_MLX_ICL_REPETITION_PENALTY" in r.getMessage() for r in caplog.records)
+
+
+async def test_env_override_without_private_api_falls_back(tmp_path, monkeypatch, fake_mlx_loader):
+    monkeypatch.setenv("VOICEBOX_MLX_ICL_REPETITION_PENALTY", "1.2")
+    model = _FakeModel()  # no _generate_icl
+    backend = _backend(model)
+
+    await backend.generate("hola", _prompt(tmp_path), language="es")
+
+    assert len(model.calls) == 1

@@ -5,6 +5,7 @@ MLX backend implementation for TTS and STT using mlx-audio.
 from typing import Optional, List, Tuple
 import inspect
 import logging
+import os
 import numpy as np
 from pathlib import Path
 
@@ -21,6 +22,35 @@ from . import TTSBackend, STTBackend, LANGUAGE_CODE_TO_NAME, WHISPER_HF_REPOS
 from .base import is_model_cached, combine_voice_prompts as _combine_voice_prompts, model_load_progress
 from ..utils.cache import get_cache_key, get_cached_voice_prompt, cache_voice_prompt
 from ..utils.mlx_executor import run_in_mlx_executor
+
+
+# Experimental: mlx-audio floors the in-context-cloning repetition penalty at
+# 1.5 (qwen3_tts.py, generate() -> max(x, 1.5)), applied to the whole chunk
+# history. Set VOICEBOX_MLX_ICL_REPETITION_PENALTY to try a lower value via
+# the library's private ICL entry point. Diagnostics only; default off.
+ICL_REPETITION_PENALTY_ENV = "VOICEBOX_MLX_ICL_REPETITION_PENALTY"
+
+
+def _icl_repetition_penalty_override() -> float | None:
+    raw = os.environ.get(ICL_REPETITION_PENALTY_ENV)
+    if not raw:
+        return None
+    try:
+        value = float(raw)
+    except ValueError:
+        logger.warning("Ignoring %s=%r: not a number", ICL_REPETITION_PENALTY_ENV, raw)
+        return None
+    if not 1.0 <= value <= 2.0:
+        logger.warning("Ignoring %s=%r: expected a value between 1.0 and 2.0", ICL_REPETITION_PENALTY_ENV, raw)
+        return None
+    return value
+
+
+def _mlx_load_audio(path: str, sample_rate: int):
+    """Load a reference clip the way mlx-audio's generate() does before ICL."""
+    from mlx_audio.utils import load_audio
+
+    return load_audio(path, sample_rate=sample_rate)
 
 
 class MLXTTSBackend:
@@ -271,7 +301,26 @@ class MLXTTSBackend:
             has_encoder is not False,
             len(ref_text or ""),
         )
+        override = _icl_repetition_penalty_override()
+        if override is not None:
+            if hasattr(self.model, "_generate_icl"):
+                return self._run_icl_with_penalty(text, ref_audio, ref_text, lang, override)
+            logger.warning("%s is set but this mlx-audio has no _generate_icl; using the public path", ICL_REPETITION_PENALTY_ENV)
         return list(self.model.generate(text, ref_audio=ref_audio, ref_text=ref_text, lang_code=lang))
+
+    def _run_icl_with_penalty(self, text: str, ref_audio: str, ref_text: str, lang: str, penalty: float) -> list:
+        """Call mlx-audio's ICL cloning directly so the repetition penalty is not floored at 1.5."""
+        logger.warning(
+            "Experimental: ICL repetition_penalty overridden to %.2f via %s (mlx-audio floors it at 1.5)",
+            penalty,
+            ICL_REPETITION_PENALTY_ENV,
+        )
+        audio = _mlx_load_audio(ref_audio, getattr(self.model, "sample_rate", 24000))
+        return list(
+            self.model._generate_icl(
+                text=text, ref_audio=audio, ref_text=ref_text, language=lang, repetition_penalty=penalty
+            )
+        )
 
     def _warn_if_token_capped(self, text: str, results: list) -> None:
         """Flag chunks that hit mlx-audio's token cap; diagnostics only.
