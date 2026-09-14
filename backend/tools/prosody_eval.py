@@ -13,11 +13,10 @@ without knowing which is which.
 Never use retry/regenerate for comparisons: they re-seed and re-chunk.
 """
 
-from __future__ import annotations
-
 import argparse
 import csv
 import json
+import math
 import random
 import sys
 import time
@@ -26,6 +25,8 @@ from itertools import combinations
 from pathlib import Path
 
 import numpy as np
+import requests
+import soundfile as sf
 
 from backend.utils.text_normalize import normalize_text
 
@@ -102,7 +103,9 @@ def wer(reference: str, hypothesis: str) -> float:
     return previous[-1] / len(ref)
 
 
-def audio_metrics(audio: np.ndarray, sample_rate: int, text: str, silence_db: float = -40.0, pause_min_s: float = 0.3) -> dict:
+def audio_metrics(
+    audio: np.ndarray, sample_rate: int, text: str, silence_db: float = -40.0, pause_min_s: float = 0.3
+) -> dict:
     """Duration, speaking rate, edge silence, internal pauses, level and clipping of one take."""
     audio = np.asarray(audio, dtype=np.float32)
     n = len(audio)
@@ -149,7 +152,8 @@ def make_blind_pairs(rows: list[dict], rng_seed: int = 0) -> tuple[list[dict], d
     rng = random.Random(rng_seed)
     groups: dict[tuple, list[dict]] = {}
     for row in rows:
-        groups.setdefault((row["text_id"], row["seed"]), []).append(row)
+        if row.get("wav"):  # failed takes have no audio to listen to
+            groups.setdefault((row["text_id"], row["seed"]), []).append(row)
     pairs, key = [], {}
     for (text_id, seed), takes in sorted(groups.items(), key=lambda kv: (kv[0][0], kv[0][1])):
         takes = sorted(takes, key=lambda r: r["condition"])
@@ -161,27 +165,31 @@ def make_blind_pairs(rows: list[dict], rng_seed: int = 0) -> tuple[list[dict], d
     return pairs, key
 
 
-# ── REST runner ──────────────────────────────────────────────────────────
-
-
 def parse_condition(spec: str) -> Condition:
-    """``name:key=value,key=value`` with int/float/bool coercion."""
+    """Parse a ``--condition`` argument: ``name:key=value,key=value`` with int/float/bool coercion."""
     name, _, rest = spec.partition(":")
+    if not name.strip():
+        raise argparse.ArgumentTypeError(f"condition {spec!r} has no name")
     overrides: dict = {}
     for item in filter(None, rest.split(",")):
-        key, _, raw = item.partition("=")
-        overrides[key.strip()] = _coerce(raw.strip())
+        key, sep, raw = item.partition("=")
+        if not sep or not key.strip():
+            raise argparse.ArgumentTypeError(f"condition {spec!r}: expected key=value, got {item!r}")
+        overrides[key.strip()] = _coerce(raw.strip(), spec)
     return Condition(name=name.strip(), overrides=overrides)
 
 
-def _coerce(raw: str):
+def _coerce(raw: str, spec: str):
     if raw.lower() in {"true", "false"}:
         return raw.lower() == "true"
     for cast in (int, float):
         try:
-            return cast(raw)
+            value = cast(raw)
         except ValueError:
             continue
+        if isinstance(value, float) and not math.isfinite(value):
+            raise argparse.ArgumentTypeError(f"condition {spec!r}: {raw!r} is not a finite number")
+        return value
     return raw
 
 
@@ -224,8 +232,7 @@ def _transcribe(session, base_url: str, wav_path: Path, stt_model: str, language
 
 
 def run(args: argparse.Namespace) -> None:
-    import requests
-
+    """Generate every condition x text x seed, measure each take and write the result files."""
     session = requests.Session()
     base_url = args.base_url.rstrip("/")
     profile_id = _resolve_profile_id(session, base_url, args.profile)
@@ -236,7 +243,18 @@ def run(args: argparse.Namespace) -> None:
     for cond in args.conditions:
         for item in corpus:
             for seed in args.seeds:
-                rows.append(_run_take(session, base_url, out, cond, item, seed, profile_id, args))
+                rows.append(
+                    _run_take(
+                        session,
+                        base_url=base_url,
+                        out=out,
+                        cond=cond,
+                        item=item,
+                        seed=seed,
+                        profile_id=profile_id,
+                        args=args,
+                    )
+                )
                 _write_results(out, rows)
     pairs, key = make_blind_pairs(rows, rng_seed=args.pair_seed)
     _write_csv(out / "pairs.csv", pairs)
@@ -244,15 +262,32 @@ def run(args: argparse.Namespace) -> None:
     _print_summary(rows)
 
 
-def _run_take(session, base_url, out, cond, item, seed, profile_id, args) -> dict:
-    import soundfile as sf
-
+def _run_take(
+    session: requests.Session,
+    *,
+    base_url: str,
+    out: Path,
+    cond: Condition,
+    item: dict,
+    seed: int,
+    profile_id: str,
+    args: argparse.Namespace,
+) -> dict:
+    """Request one generation and return its result row (metrics and WER when it completed)."""
     payload = build_generate_payload(cond, profile_id=profile_id, text=item["text"], seed=seed, language=args.language)
     started = time.time()
     gen = session.post(f"{base_url}/generate", json=payload, timeout=60).json()
     status = _wait_for_generation(session, base_url, gen["id"], args.timeout)
     wall = round(time.time() - started, 1)
-    row = {"condition": cond.name, "text_id": item["id"], "seed": seed, "generation_id": gen["id"], "wall_s": wall, "status": status.get("status"), "error": status.get("error") or ""}
+    row = {
+        "condition": cond.name,
+        "text_id": item["id"],
+        "seed": seed,
+        "generation_id": gen["id"],
+        "wall_s": wall,
+        "status": status.get("status"),
+        "error": status.get("error") or "",
+    }
     if status.get("status") != "completed":
         print(f"[{cond.name}] {item['id']} seed {seed}: FAILED {row['error']}", file=sys.stderr)
         return row
@@ -266,7 +301,9 @@ def _run_take(session, base_url, out, cond, item, seed, profile_id, args) -> dic
         hypothesis = _transcribe(session, base_url, wav_path, args.stt_model, args.language)
         row["wer"] = round(wer(item["text"], hypothesis), 4)
         row["transcript"] = hypothesis
-    print(f"[{cond.name}] {item['id']} seed {seed}: {row['duration_s']} s, {row['chars_per_s']} chars/s, WER {row.get('wer', 'n/a')}, {wall} s wall")
+    print(
+        f"[{cond.name}] {item['id']} seed {seed}: {row['duration_s']} s, {row['chars_per_s']} chars/s, WER {row.get('wer', 'n/a')}, {wall} s wall"
+    )
     return row
 
 
@@ -306,10 +343,18 @@ def _mean(rows: list[dict], key: str) -> float:
 
 
 def main(argv: list[str] | None = None) -> None:
+    """Command-line entry point; see the module docstring for an example."""
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--base-url", default="http://127.0.0.1:17493")
     parser.add_argument("--profile", required=True, help="voice profile name or id")
-    parser.add_argument("--condition", dest="conditions", action="append", type=parse_condition, required=True, help="name:key=value,... (repeatable)")
+    parser.add_argument(
+        "--condition",
+        dest="conditions",
+        action="append",
+        type=parse_condition,
+        required=True,
+        help="name:key=value,... (repeatable)",
+    )
     parser.add_argument("--seeds", nargs="+", type=int, default=[1, 2, 3])
     parser.add_argument("--texts", nargs="*", default=None, help="corpus ids to run (default: all)")
     parser.add_argument("--language", default="es")
