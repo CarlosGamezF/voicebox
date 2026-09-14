@@ -21,6 +21,7 @@ use tauri_plugin_shell::ShellExt;
 use tokio::sync::mpsc;
 
 pub const DICTATE_WINDOW_LABEL: &str = "dictate";
+const MAIN_WINDOW_LABEL: &str = "main";
 const DICTATE_WINDOW_WIDTH: f64 = 420.0;
 const DICTATE_WINDOW_HEIGHT: f64 = 64.0;
 
@@ -118,6 +119,43 @@ pub fn show_dictate_window(app: &tauri::AppHandle) {
     #[cfg(not(target_os = "linux"))]
     let _ = window.set_ignore_cursor_events(false);
     let _ = window.show();
+}
+
+/// Bring the main window back when the user clicks the Dock icon.
+///
+/// tao answers `applicationShouldHandleReopen:hasVisibleWindows:` with the
+/// `hasVisibleWindows` flag itself, so when every window is minimized or
+/// closed AppKit performs none of its default reopen behaviour and only
+/// `RunEvent::Reopen` reaches us. Without this handler a minimized Voicebox
+/// stayed minimized on Dock clicks, and a closed main window (the hidden
+/// dictate pill keeps the app alive) never came back.
+#[cfg(target_os = "macos")]
+fn reopen_main_window(app: &tauri::AppHandle) {
+    if let Some(window) = app.get_webview_window(MAIN_WINDOW_LABEL) {
+        let _ = window.unminimize();
+        let _ = window.show();
+        let _ = window.set_focus();
+        return;
+    }
+    let Some(config) = app
+        .config()
+        .app
+        .windows
+        .iter()
+        .find(|w| w.label == MAIN_WINDOW_LABEL)
+        .cloned()
+    else {
+        eprintln!("No window config labelled {MAIN_WINDOW_LABEL:?}; cannot reopen the main window");
+        return;
+    };
+    match WebviewWindowBuilder::from_config(app, &config) {
+        Ok(builder) => {
+            if let Err(e) = builder.build() {
+                eprintln!("Failed to recreate the main window on reopen: {e}");
+            }
+        }
+        Err(e) => eprintln!("Failed to build the main window config on reopen: {e}"),
+    }
 }
 
 const LEGACY_PORT: u16 = 8000;
@@ -1648,6 +1686,12 @@ pub fn run() {
                     println!("RunEvent::ExitRequested received");
                     // Don't prevent exit, just log it
                     let _ = api;
+                }
+                #[cfg(target_os = "macos")]
+                RunEvent::Reopen { has_visible_windows, .. } => {
+                    if !has_visible_windows {
+                        reopen_main_window(app);
+                    }
                 }
                 _ => {}
             }
