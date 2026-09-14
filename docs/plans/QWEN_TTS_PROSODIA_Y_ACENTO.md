@@ -16,6 +16,12 @@ Revisión contra `main`, `mlx-audio` 0.4.1 (`mlx_audio/tts/models/qwen3_tts/`) y
 6. **Chunking.** Abreviaturas solo inglesas, nunca se parte tras una cifra, los saltos de párrafo no son frontera y `mlx-audio` vuelve a partir por `\n`. `/speak` y MCP ignoraban el ajuste de 550/80 y retry/regenerar vuelven a 800/50 con semilla aleatoria: no sirven para comparar. Lo primero está corregido en esta rama; lo segundo, pendiente.
 7. **Normalizador.** Recorta en duro al 0,85 de pico entre el 0,01 % y el 0,06 % de las muestras; efecto menor.
 
+## Hallazgo del harness (2026-09-14): la referencia se “completa” al principio de cada toma
+
+Las primeras mediciones mostraron que **todas** las tomas del perfil Carlos empezaban con “Y pausa con total.”, cuatro palabras que no están en el texto pedido. La transcripción guardada de la muestra terminaba en “…cada matiz, tono y pausa con total”, pero la grabación se cortó en “…cada matiz, tono”: el modelo, condicionado con el texto de la referencia seguido del texto nuevo, sintetiza primero las palabras que faltan. Es el mecanismo de la issue upstream #604 (“la referencia se filtra como prefijo en cada generación”). Tras recortar la transcripción a lo que se dice, la misma frase pasó de 3,0 s a 2,24 s y Whisper la transcribe exacta.
+
+Consecuencias: el WER de la sesión de medida A está inflado por igual en todas las condiciones (el corpus corto sube a 0,67); la comparación relativa sigue siendo válida. El análisis de muestras acepta ahora `verify_transcript=true`, transcribe la muestra con el Whisper configurado y avisa cuando la transcripción continúa más allá del audio.
+
 ## Cómo medir (herramientas ya en la rama)
 
 - `backend/tools/prosody_eval.py`: harness local. Genera por REST un corpus fijo en español con varias semillas por condición, descarga el audio, mide duración, caracteres por segundo, silencios, pausas, nivel y recorte, transcribe con el Whisper configurado y calcula el WER; escribe `results.csv`, `results.json` y pares ciegos A/B con su clave aparte. Ejemplo:

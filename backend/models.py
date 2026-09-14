@@ -75,6 +75,7 @@ class ReferenceAnalysisResponse(BaseModel):
     peak: float
     clipping_ratio: float
     speech_ratio: float
+    transcript_extra_words: str | None = None
     warnings: list[str] = Field(default_factory=list)
 
 

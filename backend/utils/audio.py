@@ -7,6 +7,8 @@ import soundfile as sf
 import librosa
 from typing import Tuple, Optional
 
+from .text_normalize import normalize_words
+
 
 def normalize_audio(
     audio: np.ndarray,
@@ -450,3 +452,34 @@ def reference_audio_warnings(analysis: dict, include_edges: bool = True) -> list
             "The clip ends abruptly: leave about half a second of silence after the last word so the clone does not inherit a cut-off."
         )
     return warnings
+
+
+def transcript_tail_mismatch(stored_text: str, spoken_text: str, min_extra_words: int = 2) -> str | None:
+    """Words at the end of *stored_text* that *spoken_text* never reaches, or None.
+
+    A reference transcript that continues past the recording (the take
+    auto-stopped, the text kept going) makes the clone speak the missing words
+    at the start of every generation. Anchor on the last spoken words, allow
+    Whisper to miss a single trailing word, and report the leftover.
+    """
+    stored = normalize_words(stored_text)
+    spoken = normalize_words(spoken_text)
+    if not stored or not spoken:
+        return None
+    for anchor_len in (3, 2, 1):
+        anchor = spoken[-anchor_len:]
+        if len(anchor) < anchor_len:
+            continue
+        position = _last_occurrence(stored, anchor)
+        if position is None:
+            continue
+        extra = stored[position + anchor_len :]
+        return " ".join(extra) if len(extra) >= min_extra_words else None
+    return None
+
+
+def _last_occurrence(words: list[str], phrase: list[str]) -> int | None:
+    for start in range(len(words) - len(phrase), -1, -1):
+        if words[start : start + len(phrase)] == phrase:
+            return start
+    return None

@@ -124,3 +124,71 @@ async def test_add_sample_without_window_keeps_the_whole_clip(db, tmp_path):
     stored, sr = sf.read(config.resolve_storage_path(sample.audio_path))
     assert 11.9 <= len(stored) / sr <= 12.7  # 12 s of speech plus the 100 ms edge pads
     assert sample.warnings == []
+
+
+# Transcript that continues past the audio (upstream issue #604's mechanism)
+
+
+from backend.utils.audio import transcript_tail_mismatch  # noqa: E402
+
+
+def test_tail_mismatch_detects_words_the_audio_never_says():
+    stored = "Espero que esta prueba sea suficiente para capturar cada matiz, tono y pausa con total"
+    spoken = "espero que esta prueba sea suficiente para capturar cada matiz, tono..."
+
+    extra = transcript_tail_mismatch(stored, spoken)
+
+    assert extra == "y pausa con total"
+
+
+def test_tail_mismatch_is_none_when_the_transcript_matches():
+    stored = "Espero que esta prueba sea suficiente para capturar cada matiz y tono."
+    spoken = "Espero que esta prueba sea suficiente para capturar cada matiz y tono"
+
+    assert transcript_tail_mismatch(stored, spoken) is None
+
+
+def test_tail_mismatch_tolerates_one_missing_word_and_whisper_variants():
+    # A single trailing word can be a Whisper miss rather than a cut recording.
+    assert transcript_tail_mismatch("uno dos tres cuatro cinco", "uno dos tres cuatro") is None
+    assert transcript_tail_mismatch("La Sra. García llegó tarde", "la señora garcia llego tarde") is None
+
+
+class _FakeWhisper:
+    model_size = "large"
+
+    def is_loaded(self):
+        return True
+
+    def _is_model_cached(self, size):
+        return True
+
+    async def transcribe(self, path, language, model_size):
+        return "texto de la muestra hasta aquí"
+
+
+async def test_analysis_with_transcript_check_warns_about_the_extra_words(db, tmp_path, monkeypatch):
+    src = tmp_path / "upload.wav"
+    sf.write(src, _speech_like(12.0, amp=0.3, tail_s=0.5), SR)
+    sample = await profiles.add_profile_sample("p1", str(src), "texto de la muestra hasta aquí y algo que nunca se dijo", db)
+    monkeypatch.setattr(profiles, "get_stt_backend", lambda: _FakeWhisper())
+
+    analysis = await profiles.analyze_profile_sample(sample.id, db, verify_transcript=True, language="es")
+
+    assert analysis["transcript_extra_words"] == "y algo que nunca se dijo"
+    assert any("continues past the audio" in w for w in analysis["warnings"])
+
+
+async def test_analysis_without_transcript_check_does_not_touch_whisper(db, tmp_path, monkeypatch):
+    src = tmp_path / "upload.wav"
+    sf.write(src, _speech_like(12.0, amp=0.3, tail_s=0.5), SR)
+    sample = await profiles.add_profile_sample("p1", str(src), "texto", db)
+
+    def boom():
+        raise AssertionError("Whisper must not be loaded")
+
+    monkeypatch.setattr(profiles, "get_stt_backend", boom)
+
+    analysis = await profiles.analyze_profile_sample(sample.id, db)
+
+    assert analysis["transcript_extra_words"] is None

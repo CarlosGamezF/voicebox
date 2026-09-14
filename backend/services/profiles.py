@@ -11,6 +11,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from .. import config
+from ..backends import get_stt_backend
 from ..database import Generation as DBGeneration, ProfileSample as DBProfileSample, VoiceProfile as DBVoiceProfile
 from ..models import (
     EffectConfig,
@@ -23,6 +24,7 @@ from ..utils.audio import (
     load_audio,
     reference_audio_warnings,
     save_audio,
+    transcript_tail_mismatch,
     trim_reference_window,
     validate_reference_audio_array,
 )
@@ -283,8 +285,18 @@ def _load_window_and_check(audio_path: str, start_s: float | None, end_s: float 
     return is_valid, error_msg, audio, sr, warnings
 
 
-async def analyze_profile_sample(sample_id: str, db: Session) -> dict | None:
-    """Measure a stored sample; None when the sample does not exist."""
+async def analyze_profile_sample(
+    sample_id: str,
+    db: Session,
+    verify_transcript: bool = False,
+    language: str | None = None,
+) -> dict | None:
+    """Measure a stored sample; None when the sample does not exist.
+
+    With ``verify_transcript`` the clip is transcribed with the configured
+    Whisper and the stored transcript is checked for words that continue past
+    the audio: the clone speaks those at the start of every take.
+    """
     import asyncio
 
     sample = db.query(DBProfileSample).filter_by(id=sample_id).first()
@@ -295,7 +307,27 @@ async def analyze_profile_sample(sample_id: str, db: Session) -> dict | None:
     analysis = analyze_reference_audio(audio, sr)
     analysis["sample_id"] = sample.id
     analysis["warnings"] = reference_audio_warnings(analysis, include_edges=False)
+    analysis["transcript_extra_words"] = None
+    if verify_transcript:
+        extra = await _extra_transcript_words(sample, str(path), language, db)
+        analysis["transcript_extra_words"] = extra
+        if extra:
+            analysis["warnings"].append(
+                f'The transcript continues past the audio ("{extra}"): every take will start by '
+                "speaking those words. Trim the transcript to what is actually spoken."
+            )
     return analysis
+
+
+async def _extra_transcript_words(sample, path: str, language: str | None, db: Session) -> str | None:
+    from .transcribe import resolve_transcription_model
+
+    if language is None:
+        profile = db.query(DBVoiceProfile).filter_by(id=sample.profile_id).first()
+        language = profile.language if profile else None
+    whisper = get_stt_backend()
+    spoken = await whisper.transcribe(path, language, resolve_transcription_model(None, db, whisper))
+    return transcript_tail_mismatch(sample.reference_text, spoken)
 
 
 async def get_profile(

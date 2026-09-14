@@ -19,15 +19,15 @@ import argparse
 import csv
 import json
 import random
-import re
 import sys
 import time
-import unicodedata
 from dataclasses import dataclass, field
 from itertools import combinations
 from pathlib import Path
 
 import numpy as np
+
+from backend.utils.text_normalize import normalize_text
 
 CORPUS = [
     {"id": "short_question", "text": "¿Vienes conmigo esta tarde al mercado?"},
@@ -85,16 +85,6 @@ def build_generate_payload(cond: Condition, *, profile_id: str, text: str, seed:
     payload = {"profile_id": profile_id, "text": text, "seed": seed, "language": language, **DEFAULT_PAYLOAD}
     payload.update(cond.overrides)
     return payload
-
-
-def normalize_text(text: str) -> str:
-    """Lowercase, drop punctuation and accents (keeping ñ) for word comparisons."""
-    text = text.lower().replace("ñ", "\x00")
-    text = unicodedata.normalize("NFD", text)
-    text = "".join(c for c in text if unicodedata.category(c) != "Mn")
-    text = text.replace("\x00", "ñ")
-    text = re.sub(r"[^a-z0-9ñ\s]", " ", text)
-    return " ".join(text.split())
 
 
 def wer(reference: str, hypothesis: str) -> float:

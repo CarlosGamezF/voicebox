@@ -201,9 +201,17 @@ async def add_profile_sample(
 
 
 @router.get("/profiles/samples/{sample_id}/analysis", response_model=models.ReferenceAnalysisResponse)
-async def analyze_profile_sample(sample_id: str, db: Session = Depends(get_db)):
-    """Measure a stored voice sample (length, level, edges, clipping) with quality warnings."""
-    analysis = await profiles.analyze_profile_sample(sample_id, db)
+async def analyze_profile_sample(
+    sample_id: str,
+    verify_transcript: bool = False,
+    db: Session = Depends(get_db),
+):
+    """Measure a stored voice sample (length, level, edges, clipping) with quality warnings.
+
+    ``verify_transcript=true`` also transcribes the clip with the configured
+    Whisper and flags a stored transcript that continues past the audio.
+    """
+    analysis = await profiles.analyze_profile_sample(sample_id, db, verify_transcript=verify_transcript)
     if analysis is None:
         raise HTTPException(status_code=404, detail="Sample not found")
     return analysis

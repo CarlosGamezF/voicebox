@@ -22,7 +22,7 @@ SR = 1000
 
 def test_normalize_text_lowercases_strips_punctuation_and_accents():
     assert normalize_text("¿Qué medidas se tomarán? ¡Paciencia!") == "que medidas se tomaran paciencia"
-    assert normalize_text("La Dra. Pérez, núm. 3.") == "la dra perez num 3"
+    assert normalize_text("La Dra. Pérez, núm. 3.") == "la doctora perez número 3"
 
 
 def test_wer_counts_substitutions_insertions_and_deletions():
