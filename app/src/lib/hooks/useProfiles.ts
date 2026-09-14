@@ -65,11 +65,13 @@ export function useProfileSamples(profileId: string) {
 
 export function useSampleAnalysis(sampleId: string) {
   return useQuery({
-    queryKey: ['profiles', 'samples', sampleId, 'analysis'],
+    // Kept outside the 'profiles' key: profile mutations invalidate that whole prefix and
+    // would refetch every badge, while the audio behind a sample never changes.
+    queryKey: ['sampleAnalysis', sampleId],
     queryFn: () => apiClient.analyzeSample(sampleId),
     enabled: !!sampleId,
-    // Sample audio never changes after upload, so one measurement per session is enough.
     staleTime: Infinity,
+    retry: 1,
   });
 }
 

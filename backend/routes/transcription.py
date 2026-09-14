@@ -27,9 +27,15 @@ async def transcribe_audio(
     file: UploadFile = File(...),
     language: str | None = Form(None),
     model: str | None = Form(None),
+    start_s: float | None = Form(None),
+    end_s: float | None = Form(None),
     db: Session = Depends(get_db),
 ):
-    """Transcribe audio file to text."""
+    """Transcribe audio file to text.
+
+    ``start_s``/``end_s`` take the same window as the sample upload, so the
+    transcript of a trimmed reference covers exactly the audio that is kept.
+    """
     uploaded_ext = Path(file.filename or "").suffix.lower()
     file_suffix = uploaded_ext if uploaded_ext in ALLOWED_AUDIO_EXTS else ".wav"
 
@@ -40,10 +46,16 @@ async def transcribe_audio(
 
     stt_path = tmp_path
     try:
-        from ..utils.audio import load_audio, save_audio
         from ..backends import WHISPER_HF_REPOS
+        from ..utils.audio import load_audio, save_audio, trim_reference_window
 
         audio, sr = await asyncio.to_thread(load_audio, tmp_path)
+        windowed = start_s is not None or end_s is not None
+        if windowed:
+            try:
+                audio = trim_reference_window(audio, sr, start_s, end_s)
+            except ValueError as e:
+                raise HTTPException(status_code=400, detail=str(e)) from e
         duration = len(audio) / sr
 
         # The STT backend (mlx_audio.stt -> miniaudio) only decodes
@@ -53,7 +65,7 @@ async def transcribe_audio(
         # audioread/ffmpeg for exotic containers), so re-encode that PCM to a
         # temp WAV and hand *that* to Whisper. WAV inputs pass through
         # unchanged.
-        if file_suffix != ".wav":
+        if file_suffix != ".wav" or windowed:
             stt_path = f"{tmp_path}.stt.wav"
             await asyncio.to_thread(save_audio, audio, stt_path, sr)
 

@@ -206,6 +206,7 @@ export function ProfileForm() {
   useEffect(() => {
     if (selectedFile && selectedFile instanceof File) {
       setIsValidatingAudio(true);
+      setAudioDuration(null);
       getAudioDuration(selectedFile as File & { recordedDuration?: number })
         .then((duration) => {
           setAudioDuration(duration);
@@ -439,7 +440,11 @@ export function ProfileForm() {
 
     try {
       const language = form.getValues('language');
-      const result = await transcribe.mutateAsync({ file, language });
+      const result = await transcribe.mutateAsync({
+        file,
+        language,
+        referenceWindow: referenceWindow.request,
+      });
 
       form.setValue('referenceText', result.text, { shouldValidate: true });
     } catch (error) {

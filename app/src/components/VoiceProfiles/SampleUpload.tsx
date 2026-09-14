@@ -29,6 +29,7 @@ import { useAddSample, useProfile } from '@/lib/hooks/useProfiles';
 import { useClipDuration, useReferenceWindow } from '@/lib/hooks/useReferenceWindow';
 import { useSystemAudioCapture } from '@/lib/hooks/useSystemAudioCapture';
 import { useTranscription } from '@/lib/hooks/useTranscription';
+import { formatAudioDuration } from '@/lib/utils/audio';
 import { usePlatform } from '@/platform/PlatformContext';
 import { AudioSampleRecording } from './AudioSampleRecording';
 import { AudioSampleSystem } from './AudioSampleSystem';
@@ -45,6 +46,8 @@ const sampleSchema = z.object({
 });
 
 type SampleFormValues = z.infer<typeof sampleSchema>;
+
+const MAX_AUDIO_DURATION_SECONDS = 30;
 
 interface SampleUploadProps {
   profileId: string;
@@ -72,6 +75,11 @@ export function SampleUpload({ profileId, open, onOpenChange }: SampleUploadProp
   const selectedFile = form.watch('file');
   const clipDurationS = useClipDuration(selectedFile);
   const referenceWindow = useReferenceWindow(selectedFile, clipDurationS);
+  // The backend keeps only the chosen window, so that is what the limit applies to.
+  const effectiveDurationS = referenceWindow.request
+    ? referenceWindow.request.endS - referenceWindow.request.startS
+    : clipDurationS;
+  const isTooLong = effectiveDurationS !== null && effectiveDurationS > MAX_AUDIO_DURATION_SECONDS;
 
   const {
     isRecording,
@@ -162,7 +170,11 @@ export function SampleUpload({ profileId, open, onOpenChange }: SampleUploadProp
 
     try {
       const language = profile?.language as 'en' | 'zh' | undefined;
-      const result = await transcribe.mutateAsync({ file, language });
+      const result = await transcribe.mutateAsync({
+        file,
+        language,
+        referenceWindow: referenceWindow.request,
+      });
 
       form.setValue('referenceText', result.text, { shouldValidate: true });
     } catch (error) {
@@ -340,6 +352,15 @@ export function SampleUpload({ profileId, open, onOpenChange }: SampleUploadProp
               />
             )}
 
+            {isTooLong && effectiveDurationS !== null && (
+              <p className="text-sm text-destructive">
+                {t('profileForm.validation.audioTooLong', {
+                  duration: formatAudioDuration(effectiveDurationS),
+                  max: formatAudioDuration(MAX_AUDIO_DURATION_SECONDS),
+                })}
+              </p>
+            )}
+
             <FormField
               control={form.control}
               name="referenceText"
@@ -362,7 +383,7 @@ export function SampleUpload({ profileId, open, onOpenChange }: SampleUploadProp
               <Button type="button" variant="outline" onClick={() => handleOpenChange(false)}>
                 Cancel
               </Button>
-              <Button type="submit" disabled={addSample.isPending}>
+              <Button type="submit" disabled={addSample.isPending || isTooLong}>
                 {addSample.isPending ? 'Uploading...' : 'Add Sample'}
               </Button>
             </div>

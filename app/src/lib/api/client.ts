@@ -412,6 +412,7 @@ class ApiClient {
     file: File,
     language?: LanguageCode,
     model?: WhisperModelSize,
+    referenceWindow?: ReferenceWindow,
   ): Promise<TranscriptionResponse> {
     const formData = new FormData();
     formData.append('file', file);
@@ -420,6 +421,12 @@ class ApiClient {
     }
     if (model) {
       formData.append('model', model);
+    }
+    if (referenceWindow?.startS !== undefined) {
+      formData.append('start_s', String(referenceWindow.startS));
+    }
+    if (referenceWindow?.endS !== undefined) {
+      formData.append('end_s', String(referenceWindow.endS));
     }
 
     const url = `${this.getBaseUrl()}/transcribe`;
