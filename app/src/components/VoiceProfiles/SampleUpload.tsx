@@ -2,6 +2,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { Mic, Monitor, Upload } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
+import { useTranslation } from 'react-i18next';
 import * as z from 'zod';
 import { Button } from '@/components/ui/button';
 import {
@@ -25,12 +26,15 @@ import { useToast } from '@/components/ui/use-toast';
 import { useAudioPlayer } from '@/lib/hooks/useAudioPlayer';
 import { useAudioRecording } from '@/lib/hooks/useAudioRecording';
 import { useAddSample, useProfile } from '@/lib/hooks/useProfiles';
+import { useClipDuration, useReferenceWindow } from '@/lib/hooks/useReferenceWindow';
 import { useSystemAudioCapture } from '@/lib/hooks/useSystemAudioCapture';
 import { useTranscription } from '@/lib/hooks/useTranscription';
 import { usePlatform } from '@/platform/PlatformContext';
 import { AudioSampleRecording } from './AudioSampleRecording';
 import { AudioSampleSystem } from './AudioSampleSystem';
 import { AudioSampleUpload } from './AudioSampleUpload';
+import { ReferenceWindowControl } from './ReferenceWindowControl';
+import { SampleWarningList } from './SampleWarningList';
 
 const sampleSchema = z.object({
   file: z.instanceof(File, { message: 'Please select an audio file' }),
@@ -54,6 +58,7 @@ export function SampleUpload({ profileId, open, onOpenChange }: SampleUploadProp
   const transcribe = useTranscription();
   const { data: profile } = useProfile(profileId);
   const { toast } = useToast();
+  const { t } = useTranslation();
   const [mode, setMode] = useState<'upload' | 'record' | 'system'>('upload');
   const { isPlaying, playPause, cleanup: cleanupAudio } = useAudioPlayer();
 
@@ -65,6 +70,8 @@ export function SampleUpload({ profileId, open, onOpenChange }: SampleUploadProp
   });
 
   const selectedFile = form.watch('file');
+  const clipDurationS = useClipDuration(selectedFile);
+  const referenceWindow = useReferenceWindow(selectedFile, clipDurationS);
 
   const {
     isRecording,
@@ -169,16 +176,24 @@ export function SampleUpload({ profileId, open, onOpenChange }: SampleUploadProp
 
   async function onSubmit(data: SampleFormValues) {
     try {
-      await addSample.mutateAsync({
+      const sample = await addSample.mutateAsync({
         profileId,
         file: data.file,
         referenceText: data.referenceText,
+        referenceWindow: referenceWindow.request,
       });
 
-      toast({
-        title: 'Sample added',
-        description: 'Audio sample has been added successfully.',
-      });
+      if (sample.warnings.length > 0) {
+        toast({
+          title: t('sampleQuality.toast.savedWithNotes'),
+          description: <SampleWarningList warnings={sample.warnings} />,
+        });
+      } else {
+        toast({
+          title: 'Sample added',
+          description: 'Audio sample has been added successfully.',
+        });
+      }
 
       handleOpenChange(false);
     } catch (error) {
@@ -314,6 +329,16 @@ export function SampleUpload({ profileId, open, onOpenChange }: SampleUploadProp
                 </TabsContent>
               )}
             </Tabs>
+
+            {referenceWindow.range && clipDurationS !== null && (
+              <ReferenceWindowControl
+                durationS={clipDurationS}
+                range={referenceWindow.range}
+                onChange={referenceWindow.setRange}
+                isNarrowed={referenceWindow.isNarrowed}
+                disabled={addSample.isPending}
+              />
+            )}
 
             <FormField
               control={form.control}

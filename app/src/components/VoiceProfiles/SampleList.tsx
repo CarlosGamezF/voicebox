@@ -18,6 +18,7 @@ import { apiClient } from '@/lib/api/client';
 import { useDeleteSample, useProfileSamples, useUpdateSample } from '@/lib/hooks/useProfiles';
 import { formatAudioDuration } from '@/lib/utils/audio';
 import { cn } from '@/lib/utils/cn';
+import { SampleQualityBadge } from './SampleQualityBadge';
 import { SampleUpload } from './SampleUpload';
 
 interface MiniSamplePlayerProps {
@@ -276,12 +277,13 @@ export function SampleList({ profileId }: SampleListProps) {
                 ) : (
                   <>
                     {/* View Mode */}
-                    <div className="flex items-center gap-3 p-3 h-[72px]">
+                    <div className="flex items-center gap-3 p-3 min-h-[72px]">
                       {/* Text Content */}
-                      <div className="flex-1 min-w-0 py-0.5">
+                      <div className="flex-1 min-w-0 py-0.5 space-y-1.5">
                         <p className="text-sm font-medium line-clamp-2 leading-snug">
                           {sample.reference_text}
                         </p>
+                        <SampleQualityBadge sampleId={sample.id} />
                       </div>
 
                       {/* Action Buttons */}

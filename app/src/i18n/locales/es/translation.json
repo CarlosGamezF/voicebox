@@ -392,6 +392,24 @@
       "updateFailedFallback": "Error al actualizar la muestra"
     }
   },
+  "sampleQuality": {
+    "badge": {
+      "checking": "Comprobando…",
+      "good": "Buena",
+      "notes_one": "{{count}} aviso",
+      "notes_other": "{{count}} avisos"
+    },
+    "duration": "{{seconds}} s",
+    "toast": {
+      "savedWithNotes": "Muestra guardada con avisos de calidad"
+    },
+    "window": {
+      "label": "Ventana de referencia",
+      "hint": "Lo que mejor clona son 10-15 s de habla expresiva",
+      "range": "{{start}} s – {{end}} s ({{length}} s seleccionados)",
+      "reset": "Usar todo el clip"
+    }
+  },
   "profiles": {
     "card": {
       "noDescription": "Sin descripción",

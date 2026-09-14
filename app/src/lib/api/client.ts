@@ -20,6 +20,8 @@ import type {
   PresetVoice,
   PersonalityTextResponse,
   ProfileSampleResponse,
+  ReferenceAnalysisResponse,
+  ReferenceWindow,
   RocmStatus,
   StoryCreate,
   StoryDetailResponse,
@@ -149,11 +151,18 @@ class ApiClient {
     profileId: string,
     file: File,
     referenceText: string,
+    referenceWindow?: ReferenceWindow,
   ): Promise<ProfileSampleResponse> {
     const url = `${this.getBaseUrl()}/profiles/${profileId}/samples`;
     const formData = new FormData();
     formData.append('file', file);
     formData.append('reference_text', referenceText);
+    if (referenceWindow?.startS !== undefined) {
+      formData.append('start_s', String(referenceWindow.startS));
+    }
+    if (referenceWindow?.endS !== undefined) {
+      formData.append('end_s', String(referenceWindow.endS));
+    }
 
     const response = await fetch(url, {
       method: 'POST',
@@ -172,6 +181,10 @@ class ApiClient {
 
   async listProfileSamples(profileId: string): Promise<ProfileSampleResponse[]> {
     return this.request<ProfileSampleResponse[]>(`/profiles/${profileId}/samples`);
+  }
+
+  async analyzeSample(sampleId: string): Promise<ReferenceAnalysisResponse> {
+    return this.request<ReferenceAnalysisResponse>(`/profiles/samples/${sampleId}/analysis`);
   }
 
   async deleteProfileSample(sampleId: string): Promise<void> {

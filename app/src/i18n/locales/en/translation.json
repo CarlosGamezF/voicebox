@@ -392,6 +392,24 @@
       "updateFailedFallback": "Failed to update sample"
     }
   },
+  "sampleQuality": {
+    "badge": {
+      "checking": "Checking…",
+      "good": "Good",
+      "notes_one": "{{count}} note",
+      "notes_other": "{{count}} notes"
+    },
+    "duration": "{{seconds}} s",
+    "toast": {
+      "savedWithNotes": "Sample saved with quality notes"
+    },
+    "window": {
+      "label": "Reference window",
+      "hint": "10-15 s of expressive speech clones best",
+      "range": "{{start}} s – {{end}} s ({{length}} s selected)",
+      "reset": "Use whole clip"
+    }
+  },
   "profiles": {
     "card": {
       "noDescription": "No description",

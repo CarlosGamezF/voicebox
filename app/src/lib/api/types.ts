@@ -57,6 +57,27 @@ export interface ProfileSampleResponse {
   profile_id: string;
   audio_path: string;
   reference_text: string;
+  /** Quality notes about the clip as recorded; empty when it looks good. */
+  warnings: string[];
+}
+
+/** Part of an uploaded clip to keep, in seconds; a missing bound means the clip's edge. */
+export interface ReferenceWindow {
+  startS?: number;
+  endS?: number;
+}
+
+/** Measurements and quality notes for a stored sample. */
+export interface ReferenceAnalysisResponse {
+  sample_id: string;
+  duration_s: number;
+  leading_silence_s: number;
+  trailing_silence_s: number;
+  rms_dbfs: number;
+  peak: number;
+  clipping_ratio: number;
+  speech_ratio: number;
+  warnings: string[];
 }
 
 export interface EffectConfig {

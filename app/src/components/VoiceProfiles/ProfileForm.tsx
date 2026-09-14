@@ -49,6 +49,7 @@ import {
   useUpdateProfile,
   useUploadAvatar,
 } from '@/lib/hooks/useProfiles';
+import { type ReferenceRange, useReferenceWindow } from '@/lib/hooks/useReferenceWindow';
 import { useSystemAudioCapture } from '@/lib/hooks/useSystemAudioCapture';
 import { useTranscription } from '@/lib/hooks/useTranscription';
 import { convertToWav, formatAudioDuration, getAudioDuration } from '@/lib/utils/audio';
@@ -58,7 +59,9 @@ import { type ProfileFormDraft, useUIStore } from '@/stores/uiStore';
 import { AudioSampleRecording } from './AudioSampleRecording';
 import { AudioSampleSystem } from './AudioSampleSystem';
 import { AudioSampleUpload } from './AudioSampleUpload';
+import { ReferenceWindowControl } from './ReferenceWindowControl';
 import { SampleList } from './SampleList';
+import { SampleWarningList } from './SampleWarningList';
 
 const MAX_AUDIO_DURATION_SECONDS = 30;
 const PRESET_ONLY_ENGINES = new Set(['kokoro', 'qwen_custom_voice']);
@@ -177,6 +180,27 @@ export function ProfileForm() {
 
   const selectedFile = form.watch('sampleFile');
   const selectedAvatarFile = form.watch('avatarFile');
+  const referenceWindow = useReferenceWindow(selectedFile, audioDuration);
+  const effectiveDurationS = referenceWindow.range
+    ? referenceWindow.range[1] - referenceWindow.range[0]
+    : audioDuration;
+
+  // The backend keeps only the chosen window, so the length limit applies to that window.
+  function handleWindowChange(range: ReferenceRange) {
+    referenceWindow.setRange(range);
+    const windowLength = range[1] - range[0];
+    if (windowLength > MAX_AUDIO_DURATION_SECONDS) {
+      form.setError('sampleFile', {
+        type: 'manual',
+        message: t('profileForm.validation.audioTooLong', {
+          duration: formatAudioDuration(windowLength),
+          max: formatAudioDuration(MAX_AUDIO_DURATION_SECONDS),
+        }),
+      });
+    } else {
+      form.clearErrors('sampleFile');
+    }
+  }
 
   // Validate audio duration when file is selected
   useEffect(() => {
@@ -624,7 +648,11 @@ export function ProfileForm() {
         }
 
         try {
-          const duration = await getAudioDuration(sampleFile);
+          const clipDuration = await getAudioDuration(sampleFile);
+          // The backend keeps only the chosen window, so that is what the limit applies to.
+          const duration = referenceWindow.request
+            ? referenceWindow.request.endS - referenceWindow.request.startS
+            : clipDuration;
           if (duration > MAX_AUDIO_DURATION_SECONDS) {
             form.setError('sampleFile', {
               type: 'manual',
@@ -680,10 +708,11 @@ export function ProfileForm() {
         }
 
         try {
-          await addSample.mutateAsync({
+          const sample = await addSample.mutateAsync({
             profileId: profile.id,
             file: fileToUpload,
             referenceText: referenceText,
+            referenceWindow: referenceWindow.request,
           });
 
           // Handle avatar upload if provided
@@ -707,6 +736,13 @@ export function ProfileForm() {
             title: t('profileForm.toast.profileCreated'),
             description: t('profileForm.toast.profileCreatedSample', { name: data.name }),
           });
+
+          if (sample.warnings.length > 0) {
+            toast({
+              title: t('sampleQuality.toast.savedWithNotes'),
+              description: <SampleWarningList warnings={sample.warnings} />,
+            });
+          }
         } catch (sampleError) {
           let rollbackSucceeded = false;
           try {
@@ -988,8 +1024,8 @@ export function ProfileForm() {
                                     isValidating={isValidatingAudio}
                                     isTranscribing={transcribe.isPending}
                                     isDisabled={
-                                      audioDuration !== null &&
-                                      audioDuration > MAX_AUDIO_DURATION_SECONDS
+                                      effectiveDurationS !== null &&
+                                      effectiveDurationS > MAX_AUDIO_DURATION_SECONDS
                                     }
                                     fieldName={name}
                                   />
@@ -1041,6 +1077,16 @@ export function ProfileForm() {
                               </TabsContent>
                             )}
                           </Tabs>
+
+                          {referenceWindow.range && audioDuration !== null && (
+                            <ReferenceWindowControl
+                              durationS={audioDuration}
+                              range={referenceWindow.range}
+                              onChange={handleWindowChange}
+                              isNarrowed={referenceWindow.isNarrowed}
+                              disabled={isValidatingAudio}
+                            />
+                          )}
 
                           <FormField
                             control={form.control}

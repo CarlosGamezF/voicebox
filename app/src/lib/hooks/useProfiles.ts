@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api/client';
-import type { VoiceProfileCreate } from '@/lib/api/types';
+import type { ReferenceWindow, VoiceProfileCreate } from '@/lib/api/types';
 import { usePlatform } from '@/platform/PlatformContext';
 
 export function useProfiles() {
@@ -63,6 +63,16 @@ export function useProfileSamples(profileId: string) {
   });
 }
 
+export function useSampleAnalysis(sampleId: string) {
+  return useQuery({
+    queryKey: ['profiles', 'samples', sampleId, 'analysis'],
+    queryFn: () => apiClient.analyzeSample(sampleId),
+    enabled: !!sampleId,
+    // Sample audio never changes after upload, so one measurement per session is enough.
+    staleTime: Infinity,
+  });
+}
+
 export function useAddSample() {
   const queryClient = useQueryClient();
 
@@ -71,11 +81,13 @@ export function useAddSample() {
       profileId,
       file,
       referenceText,
+      referenceWindow,
     }: {
       profileId: string;
       file: File;
       referenceText: string;
-    }) => apiClient.addProfileSample(profileId, file, referenceText),
+      referenceWindow?: ReferenceWindow;
+    }) => apiClient.addProfileSample(profileId, file, referenceText, referenceWindow),
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({
         queryKey: ['profiles', variables.profileId, 'samples'],
