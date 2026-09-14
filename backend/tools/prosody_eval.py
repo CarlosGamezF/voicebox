@@ -235,7 +235,6 @@ def _transcribe(session, base_url: str, wav_path: Path, stt_model: str, language
 
 def run(args: argparse.Namespace) -> None:
     import requests
-    import soundfile as sf
 
     session = requests.Session()
     base_url = args.base_url.rstrip("/")
@@ -305,10 +304,15 @@ def _print_summary(rows: list[dict]) -> None:
             by_condition.setdefault(row["condition"], []).append(row)
     print("\ncondition        takes  WER    chars/s  pauses>0.3s  clip@0.85  wall s")
     for name, takes in by_condition.items():
-        def mean(key):
-            values = [t[key] for t in takes if key in t]
-            return sum(values) / len(values) if values else float("nan")
-        print(f"{name:16} {len(takes):5d}  {mean('wer'):.3f}  {mean('chars_per_s'):7.2f}  {mean('pauses_over_300ms'):11.2f}  {mean('clipped_085_ratio'):9.5f}  {mean('wall_s'):6.1f}")
+        print(
+            f"{name:16} {len(takes):5d}  {_mean(takes, 'wer'):.3f}  {_mean(takes, 'chars_per_s'):7.2f}  "
+            f"{_mean(takes, 'pauses_over_300ms'):11.2f}  {_mean(takes, 'clipped_085_ratio'):9.5f}  {_mean(takes, 'wall_s'):6.1f}"
+        )
+
+
+def _mean(rows: list[dict], key: str) -> float:
+    values = [row[key] for row in rows if key in row]
+    return sum(values) / len(values) if values else float("nan")
 
 
 def main(argv: list[str] | None = None) -> None:
