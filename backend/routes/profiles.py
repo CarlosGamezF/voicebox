@@ -211,7 +211,10 @@ async def analyze_profile_sample(
     ``verify_transcript=true`` also transcribes the clip with the configured
     Whisper and flags a stored transcript that continues past the audio.
     """
-    analysis = await profiles.analyze_profile_sample(sample_id, db, verify_transcript=verify_transcript)
+    try:
+        analysis = await profiles.analyze_profile_sample(sample_id, db, verify_transcript=verify_transcript)
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
     if analysis is None:
         raise HTTPException(status_code=404, detail="Sample not found")
     return analysis

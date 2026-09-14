@@ -20,6 +20,7 @@ from backend.services import profiles
 from backend.utils.audio import (
     analyze_reference_audio,
     reference_audio_warnings,
+    transcript_tail_mismatch,
     trim_reference_window,
 )
 
@@ -90,6 +91,18 @@ def test_trim_window_cuts_and_keeps_bounds_sane():
         trim_reference_window(audio, SR, start_s=-1.0, end_s=5.0)
 
 
+def test_trim_window_tolerates_centisecond_rounding_at_the_clip_ends():
+    # The UI rounds the end thumb to centiseconds, so a 20.346 s clip arrives as end_s=20.35.
+    audio = _speech_like(20.0, lead_s=0.146, tail_s=0.2)
+
+    out = trim_reference_window(audio, SR, start_s=1.0, end_s=20.35)
+
+    assert len(out) == len(audio) - SR
+    assert len(trim_reference_window(audio, SR, start_s=-0.01, end_s=10.0)) == 10 * SR
+    with pytest.raises(ValueError, match="Invalid reference window"):
+        trim_reference_window(audio, SR, start_s=1.0, end_s=21.0)
+
+
 @pytest.fixture
 def db(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "_data_dir", tmp_path)
@@ -115,6 +128,14 @@ async def test_add_sample_returns_warnings_and_applies_the_window(db, tmp_path):
     assert "10-15" not in joined  # the window fixed the length
 
 
+async def test_add_sample_rejects_a_corrupt_upload_as_invalid_audio(db, tmp_path):
+    src = tmp_path / "upload.wav"
+    src.write_bytes(b"RIFF" + bytes(range(256)) * 8)
+
+    with pytest.raises(ValueError, match="Invalid reference audio"):
+        await profiles.add_profile_sample("p1", str(src), "texto", db)
+
+
 async def test_add_sample_without_window_keeps_the_whole_clip(db, tmp_path):
     src = tmp_path / "upload.wav"
     sf.write(src, _speech_like(12.0, amp=0.3, tail_s=0.5), SR)
@@ -127,9 +148,6 @@ async def test_add_sample_without_window_keeps_the_whole_clip(db, tmp_path):
 
 
 # Transcript that continues past the audio (upstream issue #604's mechanism)
-
-
-from backend.utils.audio import transcript_tail_mismatch  # noqa: E402
 
 
 def test_tail_mismatch_detects_words_the_audio_never_says():
@@ -157,20 +175,26 @@ def test_tail_mismatch_tolerates_one_missing_word_and_whisper_variants():
 class _FakeWhisper:
     model_size = "large"
 
+    def __init__(self, downloaded: bool = True):
+        self.downloaded = downloaded
+
     def is_loaded(self):
-        return True
+        return self.downloaded
 
     def _is_model_cached(self, size):
-        return True
+        return self.downloaded
 
     async def transcribe(self, path, language, model_size):
+        assert self.downloaded, "an undownloaded model must not be loaded by a quality check"
         return "texto de la muestra hasta aquí"
 
 
 async def test_analysis_with_transcript_check_warns_about_the_extra_words(db, tmp_path, monkeypatch):
     src = tmp_path / "upload.wav"
     sf.write(src, _speech_like(12.0, amp=0.3, tail_s=0.5), SR)
-    sample = await profiles.add_profile_sample("p1", str(src), "texto de la muestra hasta aquí y algo que nunca se dijo", db)
+    sample = await profiles.add_profile_sample(
+        "p1", str(src), "texto de la muestra hasta aquí y algo que nunca se dijo", db
+    )
     monkeypatch.setattr(profiles, "get_stt_backend", lambda: _FakeWhisper())
 
     analysis = await profiles.analyze_profile_sample(sample.id, db, verify_transcript=True, language="es")
@@ -192,3 +216,25 @@ async def test_analysis_without_transcript_check_does_not_touch_whisper(db, tmp_
     analysis = await profiles.analyze_profile_sample(sample.id, db)
 
     assert analysis["transcript_extra_words"] is None
+
+
+async def test_transcript_check_is_skipped_when_whisper_is_not_downloaded(db, tmp_path, monkeypatch):
+    src = tmp_path / "upload.wav"
+    sf.write(src, _speech_like(12.0, amp=0.3, tail_s=0.5), SR)
+    sample = await profiles.add_profile_sample("p1", str(src), "texto que sigue", db)
+    monkeypatch.setattr(profiles, "get_stt_backend", lambda: _FakeWhisper(downloaded=False))
+
+    analysis = await profiles.analyze_profile_sample(sample.id, db, verify_transcript=True, language="es")
+
+    assert analysis["transcript_extra_words"] is None
+    assert any("not downloaded" in w for w in analysis["warnings"])
+
+
+async def test_analysis_of_a_sample_whose_file_is_gone_raises_file_not_found(db, tmp_path):
+    src = tmp_path / "upload.wav"
+    sf.write(src, _speech_like(12.0, amp=0.3, tail_s=0.5), SR)
+    sample = await profiles.add_profile_sample("p1", str(src), "texto", db)
+    config.resolve_storage_path(sample.audio_path).unlink()
+
+    with pytest.raises(FileNotFoundError):
+        await profiles.analyze_profile_sample(sample.id, db)

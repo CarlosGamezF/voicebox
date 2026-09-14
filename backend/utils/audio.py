@@ -371,12 +371,24 @@ def validate_reference_audio_array(
         return False, f"Error validating audio: {e!s}", None, None
 
 
+WINDOW_EDGE_TOLERANCE_S = 0.05
+
+
 def trim_reference_window(audio: np.ndarray, sample_rate: int, start_s: float | None, end_s: float | None) -> np.ndarray:
-    """Cut *audio* to the [start_s, end_s] window, in seconds from the start of the clip."""
+    """Cut *audio* to the [start_s, end_s] window, in seconds from the start of the clip.
+
+    Bounds within ``WINDOW_EDGE_TOLERANCE_S`` of the clip edges are clamped:
+    the UI rounds to centiseconds, so an untouched end thumb can arrive a few
+    milliseconds past the decoded length.
+    """
     duration = len(audio) / sample_rate
     start = 0.0 if start_s is None else float(start_s)
     end = duration if end_s is None else float(end_s)
-    if start < 0 or end > duration + 1e-6 or end <= start:
+    if -WINDOW_EDGE_TOLERANCE_S <= start < 0:
+        start = 0.0
+    if duration < end <= duration + WINDOW_EDGE_TOLERANCE_S:
+        end = duration
+    if start < 0 or end > duration or end <= start:
         raise ValueError(
             f"Invalid reference window {start:.2f}-{end:.2f} s for a {duration:.2f} s clip"
         )

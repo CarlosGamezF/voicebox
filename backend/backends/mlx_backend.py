@@ -303,9 +303,15 @@ class MLXTTSBackend:
         )
         override = _icl_repetition_penalty_override()
         if override is not None:
-            if hasattr(self.model, "_generate_icl"):
+            if not has_encoder:
+                logger.warning(
+                    "%s is set but the speech tokenizer has no encoder, so ICL cloning is impossible; using the public path",
+                    ICL_REPETITION_PENALTY_ENV,
+                )
+            elif hasattr(self.model, "_generate_icl"):
                 return self._run_icl_with_penalty(text, ref_audio, ref_text, lang, override)
-            logger.warning("%s is set but this mlx-audio has no _generate_icl; using the public path", ICL_REPETITION_PENALTY_ENV)
+            else:
+                logger.warning("%s is set but this mlx-audio has no _generate_icl; using the public path", ICL_REPETITION_PENALTY_ENV)
         return list(self.model.generate(text, ref_audio=ref_audio, ref_text=ref_text, lang_code=lang))
 
     def _run_icl_with_penalty(self, text: str, ref_audio: str, ref_text: str, lang: str, penalty: float) -> list:

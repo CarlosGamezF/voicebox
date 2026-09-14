@@ -47,7 +47,7 @@ def resolve_transcription_model(
     if requested:
         return requested
     configured = get_capture_settings(db).stt_model
-    if whisper is None or _model_available(whisper, configured):
+    if whisper is None or transcription_model_available(whisper, configured):
         return configured
     logger.warning(
         "Configured STT model %r is not downloaded; transcribing with %r instead. "
@@ -58,7 +58,8 @@ def resolve_transcription_model(
     return whisper.model_size
 
 
-def _model_available(whisper: STTBackend, size: str) -> bool:
+def transcription_model_available(whisper: STTBackend, size: str) -> bool:
+    """True when ``size`` is loaded or already on disk, so using it downloads nothing."""
     if whisper.is_loaded() and whisper.model_size == size:
         return True
     is_cached = getattr(whisper, "_is_model_cached", None)

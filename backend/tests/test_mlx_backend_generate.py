@@ -317,8 +317,9 @@ async def test_env_override_calls_icl_directly_with_the_requested_penalty(tmp_pa
     assert any("experimental" in r.getMessage().lower() for r in caplog.records)
 
 
-async def test_invalid_env_value_falls_back_to_the_public_path(tmp_path, monkeypatch, fake_mlx_loader, caplog):
-    monkeypatch.setenv("VOICEBOX_MLX_ICL_REPETITION_PENALTY", "abc")
+@pytest.mark.parametrize("value", ["abc", "0.5", "2.5"])
+async def test_invalid_env_value_falls_back_to_the_public_path(tmp_path, monkeypatch, fake_mlx_loader, caplog, value):
+    monkeypatch.setenv("VOICEBOX_MLX_ICL_REPETITION_PENALTY", value)
     model = _IclModel()
     backend = _backend(model)
 
@@ -338,3 +339,18 @@ async def test_env_override_without_private_api_falls_back(tmp_path, monkeypatch
     await backend.generate("hola", _prompt(tmp_path), language="es")
 
     assert len(model.calls) == 1
+
+
+async def test_env_override_needs_a_speech_tokenizer_encoder(tmp_path, monkeypatch, fake_mlx_loader, caplog):
+    # Without an encoder mlx-audio's public generate() cannot clone either; it falls back to a
+    # plain voice, and the private ICL call would raise. Take the public path and say so.
+    monkeypatch.setenv("VOICEBOX_MLX_ICL_REPETITION_PENALTY", "1.2")
+    model = _IclModel(has_encoder=False)
+    backend = _backend(model)
+
+    with caplog.at_level(logging.WARNING):
+        await backend.generate("hola", _prompt(tmp_path), language="es")
+
+    assert len(model.calls) == 1
+    assert model.icl_calls == []
+    assert any("encoder" in r.getMessage() for r in caplog.records)

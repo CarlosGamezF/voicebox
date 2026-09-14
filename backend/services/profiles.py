@@ -277,7 +277,10 @@ def _load_window_and_check(audio_path: str, start_s: float | None, end_s: float 
     The warnings describe the clip as recorded (before edge trimming), which is
     what the user can act on.
     """
-    raw, sr = load_audio(audio_path)
+    try:
+        raw, sr = load_audio(audio_path)
+    except Exception as e:
+        return False, f"Error validating audio: {e}", None, None, []
     if start_s is not None or end_s is not None:
         raw = trim_reference_window(raw, sr, start_s, end_s)
     warnings = reference_audio_warnings(analyze_reference_audio(raw, sr))
@@ -295,7 +298,11 @@ async def analyze_profile_sample(
 
     With ``verify_transcript`` the clip is transcribed with the configured
     Whisper and the stored transcript is checked for words that continue past
-    the audio: the clone speaks those at the start of every take.
+    the audio: the clone speaks those at the start of every take. The check is
+    skipped, with a warning, when that Whisper is not downloaded: a read-only
+    quality check must not start a download.
+
+    Raises ``FileNotFoundError`` when the sample row exists but its audio is gone.
     """
     import asyncio
 
@@ -303,31 +310,38 @@ async def analyze_profile_sample(
     if not sample:
         return None
     path = config.resolve_storage_path(sample.audio_path)
+    if path is None or not path.exists():
+        raise FileNotFoundError(f"Audio for sample {sample_id} is missing: {sample.audio_path}")
     audio, sr = await asyncio.to_thread(load_audio, str(path))
     analysis = analyze_reference_audio(audio, sr)
     analysis["sample_id"] = sample.id
     analysis["warnings"] = reference_audio_warnings(analysis, include_edges=False)
     analysis["transcript_extra_words"] = None
     if verify_transcript:
-        extra = await _extra_transcript_words(sample, str(path), language, db)
-        analysis["transcript_extra_words"] = extra
-        if extra:
-            analysis["warnings"].append(
-                f'The transcript continues past the audio ("{extra}"): every take will start by '
-                "speaking those words. Trim the transcript to what is actually spoken."
-            )
+        analysis["warnings"] += await _check_transcript(sample, str(path), language, db, analysis)
     return analysis
 
 
-async def _extra_transcript_words(sample, path: str, language: str | None, db: Session) -> str | None:
-    from .transcribe import resolve_transcription_model
+async def _check_transcript(sample, path: str, language: str | None, db: Session, analysis: dict) -> list[str]:
+    """Fill ``transcript_extra_words`` and return the warnings the check produces."""
+    from .transcribe import resolve_transcription_model, transcription_model_available
 
+    whisper = get_stt_backend()
+    model_size = resolve_transcription_model(None, db, whisper)
+    if not transcription_model_available(whisper, model_size):
+        return [f"Transcript check skipped: Whisper model '{model_size}' is not downloaded."]
     if language is None:
         profile = db.query(DBVoiceProfile).filter_by(id=sample.profile_id).first()
         language = profile.language if profile else None
-    whisper = get_stt_backend()
-    spoken = await whisper.transcribe(path, language, resolve_transcription_model(None, db, whisper))
-    return transcript_tail_mismatch(sample.reference_text, spoken)
+    spoken = await whisper.transcribe(path, language, model_size)
+    extra = transcript_tail_mismatch(sample.reference_text, spoken)
+    analysis["transcript_extra_words"] = extra
+    if not extra:
+        return []
+    return [
+        f'The transcript continues past the audio ("{extra}"): every take will start by '
+        "speaking those words. Trim the transcript to what is actually spoken."
+    ]
 
 
 async def get_profile(
