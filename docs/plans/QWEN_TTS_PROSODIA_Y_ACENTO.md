@@ -30,6 +30,40 @@ Consecuencias: el WER de la sesión de medida A está inflado por igual en todas
 - `VOICEBOX_DUMP_CHUNKS=<dir>`: vuelca cada trozo antes del crossfade para analizar costuras.
 - Nunca comparar con retry ni regenerar: cambian la semilla y el chunking.
 
+## Resultados del harness (2026-09-14, perfil Carlos, MLX 1.7B-Base, 3 semillas)
+
+Corpus fijo de seis textos en español (pregunta corta, narración con fecha, párrafo largo de 550 caracteres, dos párrafos, cifras y moneda, abreviaturas). WER contra Whisper large tras normalizar acentos, puntuación y abreviaturas. La sesión corrió con la transcripción de referencia **sin recortar**, así que cada trozo empezaba con la fuga “y pausa con total”; la columna “WER sin fuga” la elimina antes de comparar.
+
+**La fuga se repite en cada trozo, no solo al principio de la toma.** En “dos párrafos” aparece dos veces (una por párrafo) y en el párrafo largo con trozos de 300 caracteres, tres. Cuanto más se trocea, más veces cuela la referencia: 1,33 fugas por toma con 550 caracteres frente a 1,50 con 300. Es una razón más para comprobar la transcripción de cada muestra (`verify_transcript=true`).
+
+**Experimento A: tamaño de trozo 550 frente a 300 (misma penalización 1,5).**
+
+| Condición | Tomas | WER bruto | WER sin fuga | Fugas/toma | Caracteres/s | Pausas >300 ms |
+|---|---|---|---|---|---|---|
+| 550 caracteres | 18 | 0,317 | 0,063 | 1,33 | 13,9 | 2,17 |
+| 300 caracteres | 18 | 0,325 | 0,063 | 1,50 | 13,7 | 2,39 |
+
+El WER sin fuga es idéntico. En el párrafo largo, la única pieza que se trocea distinto, 550 da 4,7 pausas y 17,3 caracteres/s frente a 6,0 pausas y 16,5 caracteres/s con 300: cada costura añade una pausa y no mejora la inteligibilidad. Conclusión: mantener 550 como valor por defecto; bajar a 300 solo empeora las costuras.
+
+**Casi todo el WER residual viene de dos textos** (cifras 0,122; abreviaturas 0,244), y en ambos la culpa es del texto, no del clon:
+
+- Cifras y fechas en dígitos: “1.234,56 €” se leyó como “un millón treinta y cuatro mil quinientos euros” (semilla 1); “15/09/2026” como “15 de noviembre de 2026” (semilla 1) y “15 de 9 de 1206” (semilla 3). Solo una semilla de tres acertó las tres cifras.
+- Abreviaturas: “p. ej.” se pronunció “pa es”, “a pañez” y “paise” en las tres semillas; “Srta.” como “señora te” y “señor zeta”; “n.º” como “lume” en una semilla. El modelo no expande abreviaturas españolas.
+
+Los cuatro textos de prosa normal salieron con WER 0,000 sin fuga en ambas condiciones, salvo una palabra en una semilla de la narración con fecha (0,010). El siguiente paso con mejor relación valor/esfuerzo es un expansor de texto previo a la síntesis (cifras, fechas, importes y abreviaturas a palabras), que no requiere tocar el modelo.
+
+**Experimento B: penalización de repetición ICL 1,5 (mínimo de mlx-audio) frente a 1,2 y 1,1**, con `VOICEBOX_MLX_ICL_REPETITION_PENALTY`, trozos de 550 y los cuatro textos largos (narración con fecha, párrafo largo, dos párrafos, abreviaturas).
+
+| Penalización | Tomas | WER sin fuga | Caracteres/s (mín-máx) | Pausas >300 ms | Pausa máxima | Recorte >0,85 |
+|---|---|---|---|---|---|---|
+| 1,5 | 12 | 0,063 | 15,2 (13,3-17,7) | 2,75 | 0,67 s | 0,033 % |
+| 1,2 | 12 | 0,064 | 15,1 (13,0-17,9) | 2,67 | 0,68 s | 0,031 % |
+| 1,1 | 12 | 0,068 | 15,1 (12,7-18,0) | 2,83 | 0,66 s | 0,020 % |
+
+Las tres condiciones son indistinguibles en las métricas objetivas: mismo WER, misma velocidad, mismas pausas, ninguna toma degenerada (duración máxima 32,6 s frente a 32,0 s y 32,4 s; ningún bucle ni repetición en 36 tomas de hasta 551 caracteres con una referencia de 28 s). Con este modelo y esta referencia, el mínimo de 1,5 no hace falta para la estabilidad, que era su justificación. Si mejora o no la naturalidad es algo que estas métricas no miden: quedan 36 pares ciegos (1,5/1,2/1,1 cruzados por texto y semilla) en `~/voicebox-eval-2026-09-14/listen-rp/pairs.csv`, con la clave aparte en `pairs_key.json`. Mientras no se escuchen, la recomendación es no cambiar el valor por defecto y mantener el kwarg como opción del llamante (propuesta en `MLX_AUDIO_ICL_REPETITION_PENALTY_PROPOSAL.md`).
+
+Todo el material de la sesión (audios, `results.csv/json` por condición, `summarize_experiments.py`) está en `~/voicebox-eval-2026-09-14/`.
+
 ## Problema
 
 El audio generado en español con una voz generada (diseñada por descripción o clonada) suena lineal: entonación plana y acento no nativo. La pregunta era si los modelos de Qwen ofrecen algún control para mejorarlo.

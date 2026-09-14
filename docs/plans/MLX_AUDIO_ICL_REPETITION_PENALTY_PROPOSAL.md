@@ -59,5 +59,22 @@ than ~20 s can loop.
   `VOICEBOX_MLX_ICL_REPETITION_PENALTY`, that calls `_generate_icl` directly,
   plus an evaluation harness (`backend/tools/prosody_eval.py`) that measures
   WER against Whisper large, speaking rate and its drift, pauses and clipping
-  across seeds. Results for 1.5 vs 1.2 vs 1.1 on Spanish clones will be added
-  here once measured.
+  across seeds.
+- Measured on 2026-09-14 (M5 Pro, mlx-audio 0.4.1, `mlx-community/Qwen3-TTS-12Hz-1.7B-Base-bf16`,
+  one Spanish speaker, 28 s reference, 4 texts of 137-551 characters, seeds
+  1-3, chunks of 550 characters, Whisper large for WER after normalising
+  accents, punctuation and abbreviations):
+
+  | `repetition_penalty` | takes | WER | chars/s (min-max) | pauses > 300 ms | longest pause | clipping > 0.85 |
+  |---|---|---|---|---|---|---|
+  | 1.5 (current floor) | 12 | 0.063 | 15.2 (13.3-17.7) | 2.75 | 0.67 s | 0.033 % |
+  | 1.2 | 12 | 0.064 | 15.1 (13.0-17.9) | 2.67 | 0.68 s | 0.031 % |
+  | 1.1 | 12 | 0.068 | 15.1 (12.7-18.0) | 2.83 | 0.66 s | 0.020 % |
+
+  No take degenerated at 1.1 or 1.2: longest output 32.0-32.6 s in every
+  condition, no repeated phrases in the Whisper transcripts. On this setup
+  the 1.5 floor is not needed for stability, which is the reason the code
+  gives for clamping; whether a lower value sounds more natural is a
+  listening question (blind A/B pairs were produced, not yet rated). That is
+  the case for exposing the value instead of clamping it: callers who see
+  loops can keep 1.5, callers who do not can lower it.
