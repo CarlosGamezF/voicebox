@@ -9,23 +9,13 @@ import sys
 import os
 import re
 
-# On Windows with --noconsole (PyInstaller), sys.stdout/stderr are None.
-# They can also be broken file objects in some edge cases.
-# Redirect to devnull to prevent crashes from print()/tqdm/logging.
-def _is_writable(stream):
-    """Check if a stream is usable for writing."""
-    if stream is None:
-        return False
-    try:
-        stream.write("")
-        return True
-    except Exception:
-        return False
+# On Windows with --noconsole (PyInstaller), sys.stdout/stderr are None, and
+# with "keep the server running" the pipes to the Tauri parent die when it
+# exits while the server lives on. Both must never fail a request, so the
+# console streams are wrapped before anything can print (import is light).
+from backend.utils.safe_streams import install_pipe_safe_streams
 
-if not _is_writable(sys.stdout):
-    sys.stdout = open(os.devnull, 'w')
-if not _is_writable(sys.stderr):
-    sys.stderr = open(os.devnull, 'w')
+install_pipe_safe_streams()
 
 # PyInstaller + multiprocessing: child processes re-execute the frozen binary
 # with internal arguments. freeze_support() handles this and exits early.
