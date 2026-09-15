@@ -69,7 +69,7 @@ UNITS_ES = {
     "cm": ("centímetro", "centímetros"),
     "mm": ("milímetro", "milímetros"),
     "m": ("metro", "metros"),
-    "kg": ("kilogramo", "kilogramos"),
+    "kg": ("kilo", "kilos"),
     "mg": ("miligramo", "miligramos"),
     "g": ("gramo", "gramos"),
     "ml": ("mililitro", "mililitros"),
@@ -86,7 +86,7 @@ CURRENCIES_ES = {
     "£": ("libra", "libras", "penique", "peniques"),
 }
 
-_NUM = r"\d{1,3}(?:\.\d{3})+(?:,\d+)?|\d+(?:,\d+)?"
+_NUM = r"\d{1,3}(?:\.\d{3})+(?:,\d+)?|\d+\.\d{1,2}(?!\d)|\d+\.\d{4,}|\d+(?:,\d+)?"
 _UNIT_ALT = "|".join(re.escape(u) for u in sorted(UNITS_ES, key=len, reverse=True))
 _ABBR_ALT = "|".join(re.escape(a) for a in sorted(ABBREVIATIONS_ES, key=len, reverse=True))
 
@@ -170,7 +170,10 @@ def _protect_links(m: re.Match) -> str:
     return m.group(0)
 
 
-@_rule(r"\bv?\d+\.\d+\.\d+\b|\b[A-Za-z]+\d[\w-]*\b|\b[A-Za-z]{2,}-\d+\b|\b\d+/\d+\b(?![/-]\d)")
+@_rule(
+    r"\bv\d+(?:\.\d+)+\b|\b(?!\d{1,3}(?:\.\d{3})+\b)\d+\.\d+\.\d+\b"
+    r"|\b[A-Za-z]+\d[\w-]*\b|\b[A-Za-z]{2,}-\d+\b|\b\d+/\d+\b(?![/-]\d)"
+)
 def _protect_identifiers(m: re.Match) -> str:
     return m.group(0)  # version numbers, model names (Qwen3, GPT-4o, COVID-19), fractions and 24/7
 
@@ -224,7 +227,10 @@ def _money(m: re.Match) -> str:
     token, symbol = (m.group(1), m.group(2)) if m.group(1) else (m.group(4), m.group(3))
     names = CURRENCIES_ES.get(symbol[:1] if symbol[:1] in CURRENCIES_ES else "€", CURRENCIES_ES["€"])
     whole, cents = _amount(token)
-    words = f"{'un' if whole == 1 else cardinal(whole)} {names[0] if whole == 1 else names[1]}"
+    amount = "un" if whole == 1 else cardinal(whole)
+    if _round_millions(whole):
+        amount += " de"
+    words = f"{amount} {names[0] if whole == 1 else names[1]}"
     if symbol.startswith("£") and whole == 1:
         words = f"una {names[0]}"
     if cents and int(cents):
@@ -270,7 +276,28 @@ def _signed(sign: str, words: str) -> str:
 
 @_rule(rf"(?<![\w.,])(-?)({_NUM})(?![\w])")
 def _number(m: re.Match) -> str:
-    return _signed(m.group(1), _number_words(m.group(2)))
+    words = _number_words(m.group(2))
+    if _round_millions_token(m.group(2)) and _followed_by_noun(m):
+        words += " de"  # "dos millones de habitantes"
+    return _signed(m.group(1), words)
+
+
+def _round_millions(n: int) -> bool:
+    return n >= 10**6 and n % 10**6 == 0
+
+
+def _round_millions_token(token: str) -> bool:
+    plain = token.replace(".", "")
+    return plain.isdigit() and _round_millions(int(plain))
+
+
+_NOT_NOUNS = {"de", "y", "o", "u", "e", "con", "sin", "en", "a", "al", "del", "por", "para", "más", "menos"}
+
+
+def _followed_by_noun(m: re.Match) -> bool:
+    rest = m.string[m.end() :]
+    word = re.match(r"\s+([a-záéíóúñ]+)", rest)
+    return bool(word) and word.group(1) not in _NOT_NOUNS
 
 
 @_rule(r"\bEE\.\s?UU\.")
