@@ -137,8 +137,12 @@ def _capitalize_like_sentence_start(before: str, replacement: str) -> str:
     return replacement
 
 
-def _number_words(token: str, feminine: bool = False) -> str:
-    """Words for one numeric token in Spanish notation: "1.234,56", "12,5", "1.5", "300"."""
+def _number_words(token: str, feminine: bool = False, apocopate: bool = False) -> str:
+    """Words for one numeric token in Spanish notation: "1.234,56", "12,5", "1.5", "300".
+
+    ``feminine``/``apocopate`` agree an integer with the noun that follows;
+    decimals never apocopate ("veintiuno coma cinco grados").
+    """
     token = token.replace(" ", "")
     if "," in token:
         whole, fraction = token.split(",", 1)
@@ -146,11 +150,11 @@ def _number_words(token: str, feminine: bool = False) -> str:
     if "." in token:
         parts = token.split(".")
         if all(len(p) == 3 for p in parts[1:]):  # thousands separators
-            return cardinal(int("".join(parts)), feminine)
+            return cardinal(int("".join(parts)), feminine, apocopate)
         return decimal_words(parts[0], "".join(parts[1:]), feminine)
     if len(token) >= 10:  # phone numbers and codes: digit by digit
         return digits(token)
-    return cardinal(int(token), feminine)
+    return cardinal(int(token), feminine, apocopate)
 
 
 def _amount(token: str) -> tuple[int, str | None]:
@@ -227,12 +231,11 @@ def _money(m: re.Match) -> str:
     token, symbol = (m.group(1), m.group(2)) if m.group(1) else (m.group(4), m.group(3))
     names = CURRENCIES_ES.get(symbol[:1] if symbol[:1] in CURRENCIES_ES else "€", CURRENCIES_ES["€"])
     whole, cents = _amount(token)
-    amount = "un" if whole == 1 else cardinal(whole)
+    feminine = names[0] in _FEMININE_NOUNS
+    amount = ("una" if feminine else "un") if whole == 1 else cardinal(whole, feminine=feminine, apocopate=not feminine)
     if _round_millions(whole):
         amount += " de"
     words = f"{amount} {names[0] if whole == 1 else names[1]}"
-    if symbol.startswith("£") and whole == 1:
-        words = f"una {names[0]}"
     if cents and int(cents):
         cents_value = int(cents.ljust(2, "0")[:2])
         words += (
@@ -251,9 +254,10 @@ def _unit(m: re.Match) -> str:
     return _signed(m.group(1), _quantity(m.group(2), m.group(3)))
 
 
-@_rule(r"\b\d{2,4}(?:-\d{2,4}){2,}\b")
-def _hyphenated_groups(m: re.Match) -> str:
-    return ", ".join(cardinal(int(g)) for g in m.group(0).split("-"))  # phone numbers written 912-345-678
+@_rule(r"\b\d{2,4}(?:-\d{2,4}){2,}\b|\b\d{3}(?: \d{3}){2,}\b|\b\d{3}(?: \d{2}){3}\b")
+def _digit_groups(m: re.Match) -> str:
+    groups = re.split(r"[- ]", m.group(0))
+    return ", ".join(cardinal(int(g)) for g in groups)  # phone numbers: 912 345 678, 912-345-678, 612 34 56 78
 
 
 @_rule(rf"(?<![\d.,-])(\d{{1,4}})-(\d{{1,4}})(?![\d-]|[.,]\d)(?:\s?({_UNIT_ALT})(?![\wáéíóú]))?")
@@ -266,8 +270,14 @@ def _range(m: re.Match) -> str:
 
 def _quantity(token: str, unit: str) -> str:
     singular, plural = UNITS_ES[unit.lower()]
+    feminine = singular in _FEMININE_NOUNS
     one = token in ("1", "1,0", "1,00")
-    return f"{'un' if one else _number_words(token)} {singular if one else plural}"
+    if one:
+        return f"{'una' if feminine else 'un'} {singular}"
+    return f"{_number_words(token, feminine=feminine, apocopate=not feminine)} {plural}"
+
+
+_FEMININE_NOUNS = {"hora", "libra"}
 
 
 def _signed(sign: str, words: str) -> str:

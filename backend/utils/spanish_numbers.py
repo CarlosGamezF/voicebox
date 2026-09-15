@@ -64,10 +64,14 @@ _ORDINAL_TENS = {
 _ORDINAL_TEENS = {11: "undécimo", 12: "duodécimo", 17: "decimoséptimo", 18: "decimoctavo"}
 
 
-def cardinal(n: int, feminine: bool = False) -> str:
-    """``1234`` -> ``"mil doscientos treinta y cuatro"``; ``feminine`` gives ``"una"``/``"doscientas"``."""
+def cardinal(n: int, feminine: bool = False, apocopate: bool = False) -> str:
+    """``1234`` -> ``"mil doscientos treinta y cuatro"``.
+
+    ``feminine`` gives ``"una"``/``"doscientas"``; ``apocopate`` gives the form
+    used before a masculine noun (``"veintiún grados"``, ``"un euro"``).
+    """
     if n < 0:
-        return "menos " + cardinal(-n, feminine)
+        return "menos " + cardinal(-n, feminine, apocopate)
     if n == 0:
         return "cero"
     parts: list[str] = []
@@ -78,7 +82,7 @@ def cardinal(n: int, feminine: bool = False) -> str:
     if millions:
         parts.append("un millón" if millions == 1 else f"{_group(millions, apocopate=True)} millones")
     if rest:
-        parts.append(_group(rest, feminine=feminine))
+        parts.append(_group(rest, feminine=feminine, apocopate=apocopate))
     return " ".join(parts)
 
 
