@@ -87,6 +87,7 @@ class Generation(Base):
     max_chunk_chars = Column(Integer, nullable=True)
     crossfade_ms = Column(Integer, nullable=True)
     normalize = Column(Boolean, nullable=True)
+    verbalize = Column(Boolean, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
 

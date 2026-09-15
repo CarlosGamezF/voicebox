@@ -35,7 +35,7 @@ def test_migration_adds_the_replay_columns(tmp_path):
     _migrate_generations(engine, inspect(engine), {"generations"})
 
     columns = {c["name"] for c in inspect(engine).get_columns("generations")}
-    assert {"max_chunk_chars", "crossfade_ms", "normalize"} <= columns
+    assert {"max_chunk_chars", "crossfade_ms", "normalize", "verbalize"} <= columns
 
 
 @pytest.fixture
@@ -62,10 +62,11 @@ async def test_create_generation_stores_the_settings(db):
         max_chunk_chars=550,
         crossfade_ms=80,
         normalize=False,
+        verbalize=False,
     )
 
     row = db.query(Generation).filter_by(id=created.id).one()
-    assert (row.max_chunk_chars, row.crossfade_ms, row.normalize) == (550, 80, False)
+    assert (row.max_chunk_chars, row.crossfade_ms, row.normalize, row.verbalize) == (550, 80, False, False)
 
 
 @pytest.fixture
@@ -118,14 +119,20 @@ async def test_regenerate_replays_the_stored_settings(db, captured_run):
     await generations.regenerate_generation("g1", db)
 
     assert captured_run["mode"] == "regenerate"
-    assert (captured_run["max_chunk_chars"], captured_run["crossfade_ms"], captured_run["normalize"]) == (300, 120, True)
+    assert (captured_run["max_chunk_chars"], captured_run["crossfade_ms"], captured_run["normalize"]) == (
+        300,
+        120,
+        True,
+    )
 
 
 async def test_legacy_rows_fall_back_to_the_persisted_settings(db, captured_run):
     # A row written before the columns existed: every value is NULL. The
     # persisted settings differ from the schema defaults so the test can tell
     # the two apart.
-    settings_service.update_generation_settings(db, {"max_chunk_chars": 550, "crossfade_ms": 80, "normalize_audio": False})
+    settings_service.update_generation_settings(
+        db, {"max_chunk_chars": 550, "crossfade_ms": 80, "normalize_audio": False}
+    )
     _row(db, "failed")
 
     await generations.retry_generation("g1", db)
@@ -154,3 +161,19 @@ async def test_regenerate_of_a_legacy_row_keeps_normalising(db, captured_run):
     await generations.regenerate_generation("g1", db)
 
     assert captured_run["normalize"] is True
+
+
+async def test_regenerate_replays_the_verbalize_opt_out(db, captured_run):
+    _row(db, "completed", max_chunk_chars=300, crossfade_ms=120, normalize=True, verbalize=False)
+
+    await generations.regenerate_generation("g1", db)
+
+    assert captured_run["verbalize"] is False
+
+
+async def test_legacy_rows_verbalize_by_default(db, captured_run):
+    _row(db, "failed", max_chunk_chars=300, crossfade_ms=120, normalize=True)
+
+    await generations.retry_generation("g1", db)
+
+    assert captured_run["verbalize"] is True

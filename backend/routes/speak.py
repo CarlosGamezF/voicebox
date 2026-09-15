@@ -88,6 +88,7 @@ async def speak(
             max_chunk_chars=gen_settings.max_chunk_chars,
             crossfade_ms=gen_settings.crossfade_ms,
             normalize=gen_settings.normalize_audio,
+            verbalize=data.verbalize,
         ),
         db,
     )

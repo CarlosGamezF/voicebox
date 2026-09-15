@@ -190,6 +190,7 @@ def _migrate_generations(engine, inspector, tables: set[str]) -> None:
         ("max_chunk_chars", "max_chunk_chars INTEGER"),
         ("crossfade_ms", "crossfade_ms INTEGER"),
         ("normalize", "normalize BOOLEAN"),
+        ("verbalize", "verbalize BOOLEAN"),
     ):
         if column not in columns:
             _add_column(engine, "generations", column_sql, column)

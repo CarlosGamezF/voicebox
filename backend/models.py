@@ -371,6 +371,7 @@ class SpeakRequest(BaseModel):
     """Body for POST /speak — non-MCP REST surface that mirrors voicebox.speak."""
 
     text: str = Field(..., min_length=1, max_length=10000)
+    verbalize: bool = Field(default=True, description="Spell out numbers, dates and abbreviations before synthesis (Spanish)")
     profile: Optional[str] = Field(
         None,
         description="Voice profile name or id. Falls back to per-client binding, then default.",

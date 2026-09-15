@@ -305,6 +305,7 @@ def export_generation_to_zip(generation_id: str, db: Session) -> bytes:
                 "max_chunk_chars": generation.max_chunk_chars,
                 "crossfade_ms": generation.crossfade_ms,
                 "normalize": generation.normalize,
+                "verbalize": generation.verbalize,
                 "created_at": generation.created_at.isoformat(),
             },
             "profile": {
@@ -438,6 +439,7 @@ async def import_generation_from_zip(file_bytes: bytes, db: Session) -> dict:
                     max_chunk_chars=generation_data.get("max_chunk_chars"),
                     crossfade_ms=generation_data.get("crossfade_ms"),
                     normalize=generation_data.get("normalize"),
+                    verbalize=generation_data.get("verbalize"),
                     created_at=datetime.utcnow(),
                 )
                 

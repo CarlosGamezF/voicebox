@@ -69,6 +69,7 @@ async def create_generation(
     max_chunk_chars: int | None = None,
     crossfade_ms: int | None = None,
     normalize: bool | None = None,
+    verbalize: bool | None = None,
 ) -> GenerationResponse:
     """
     Create a new generation history entry.
@@ -112,6 +113,7 @@ async def create_generation(
         max_chunk_chars=max_chunk_chars,
         crossfade_ms=crossfade_ms,
         normalize=normalize,
+        verbalize=verbalize,
         created_at=datetime.utcnow(),
     )
 

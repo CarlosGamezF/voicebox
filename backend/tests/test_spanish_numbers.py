@@ -55,6 +55,11 @@ def test_cardinals(value, words):
     assert cardinal(value) == words
 
 
+def test_numbers_beyond_the_scale_are_read_digit_by_digit():
+    assert cardinal(10**18) == "uno" + " cero" * 18
+    assert cardinal(999_999_999_999_999_999).startswith("novecientos noventa y nueve mil novecientos")
+
+
 def test_feminine_cardinals_agree():
     assert cardinal(1, feminine=True) == "una"
     assert cardinal(21, feminine=True) == "veintiuna"

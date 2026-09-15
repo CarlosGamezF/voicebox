@@ -310,6 +310,7 @@ def _run_take(
     if not args.skip_wer:
         hypothesis = _transcribe(session, base_url, wav_path, args.stt_model, args.language)
         row["wer"] = round(spoken_wer(item["text"], hypothesis, args.language), 4)
+        row["wer_written"] = round(wer(item["text"], hypothesis), 4)  # against the text as typed
         row["transcript"] = hypothesis
     print(
         f"[{cond.name}] {item['id']} seed {seed}: {row['duration_s']} s, {row['chars_per_s']} chars/s, WER {row.get('wer', 'n/a')}, {wall} s wall"

@@ -150,6 +150,49 @@ GOLDEN_CASES = [
 ]
 
 
+# Cases from the adversarial review of the first version (2026-09-15).
+REVIEW_CASES = [
+    ("Cuesta 2.50 €.", "Cuesta dos euros con cincuenta céntimos."),
+    ("Cuesta $1.5.", "Cuesta un dólar con cincuenta centavos."),
+    ("Vale 1.5 euros.", "Vale un euro con cincuenta céntimos."),
+    ("Son €5.99 al mes.", "Son cinco euros con noventa y nueve céntimos al mes."),
+    ("Cobra US$ 5.", "Cobra cinco dólares."),
+    ("La parte civil del proceso.", "La parte civil del proceso."),
+    ("Lo tomo vi.", "Lo tomo vi."),
+    ("Toma vitamina D. La dosis es alta.", "Toma vitamina D. La dosis es alta."),
+    ("Leí a J. D. Salinger.", "Leí a J. D. Salinger."),
+    ("Hablamos de I+D. Luego seguimos.", "Hablamos de I+D. Luego seguimos."),
+    ("D. Juan llegó.", "Don Juan llegó."),
+    ("Hace 25°C.", "Hace veinticinco grados."),
+    ("Vive en el 5° piso.", "Vive en el quinto piso."),
+    ("Tardó 1 día.", "Tardó un día."),
+    ("Costó 1 millón de euros.", "Costó un millón de euros."),
+    ("Faltan 21 días.", "Faltan veintiún días."),
+    ("A la 1:30 llegó.", "A la una treinta llegó."),
+    ("A las 21:30 h.", "A las veintiuna treinta."),
+    ("Fue el 2026-09-15T14:30:00 en 192.168.1.1.", "Fue el 2026-09-15T14:30:00 en 192.168.1.1."),
+    (
+        "www.ejemplo.com tiene 15 usuarios. v0.6.0 ya está. h2o es agua. hola@ej.com me escribe.",
+        "www.ejemplo.com tiene quince usuarios. v0.6.0 ya está. h2o es agua. hola@ej.com me escribe.",
+    ),
+    ("Llama al 612345678.", "Llama al seiscientos doce, trescientos cuarenta y cinco, seiscientos setenta y ocho."),
+    ("Código 1234567890.", "Código uno dos tres cuatro cinco seis siete ocho nueve cero."),
+    ("Nació el 15/09/26.", "Nació el 15/09/26."),
+    ("Bajó un -5 %.", "Bajó un menos cinco por ciento."),
+]
+
+
+@pytest.mark.parametrize(("text", "spoken"), REVIEW_CASES)
+def test_review_cases(text, spoken):
+    assert verbalize(text, "es") == spoken
+
+
+def test_absurdly_large_numbers_degrade_to_digits_instead_of_failing_the_take():
+    spoken = verbalize("Hubo 1.000.000.000.000.000.000 de intentos.", "es")
+    assert not any(ch.isdigit() for ch in spoken)
+    assert spoken.startswith("Hubo uno cero cero")
+
+
 @pytest.mark.parametrize(("text", "spoken"), GOLDEN_CASES)
 def test_golden_cases(text, spoken):
     assert verbalize(text, "es") == spoken

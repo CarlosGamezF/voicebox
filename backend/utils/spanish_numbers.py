@@ -74,6 +74,8 @@ def cardinal(n: int, feminine: bool = False, apocopate: bool = False) -> str:
         return "menos " + cardinal(-n, feminine, apocopate)
     if n == 0:
         return "cero"
+    if n >= 10**18:  # beyond "billones": read digit by digit rather than fail
+        return digits(str(n))
     parts: list[str] = []
     billions, rest = divmod(n, 10**12)
     if billions:

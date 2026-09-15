@@ -13,7 +13,7 @@ from .. import config, models
 from ..services import history, personality, profiles, tts
 from ..services.settings import get_generation_settings
 from ..database import Generation as DBGeneration, VoiceProfile as DBVoiceProfile, get_db
-from ..services.generation import run_generation
+from ..services.generation import run_generation, text_to_speak
 from ..services.task_queue import cancel_generation as cancel_generation_job, enqueue_generation
 from ..utils.audio import load_audio
 from ..utils.tasks import get_task_manager
@@ -101,6 +101,7 @@ async def generate_speech(
         max_chunk_chars=data.max_chunk_chars,
         crossfade_ms=data.crossfade_ms,
         normalize=data.normalize,
+        verbalize=data.verbalize,
         generation_id=generation_id,
         status="generating",
         engine=engine,
@@ -162,6 +163,8 @@ def _replay_settings(gen: DBGeneration, db: Session, *, mode: str) -> dict[str, 
         "max_chunk_chars": gen.max_chunk_chars,
         "crossfade_ms": gen.crossfade_ms,
         "normalize": gen.normalize,
+        # Rows from before the column existed were spoken as written.
+        "verbalize": True if gen.verbalize is None else gen.verbalize,
     }
     if all(value is not None for value in values.values()):
         return values
@@ -397,7 +400,7 @@ async def stream_speech(
 
     audio, sample_rate = await generate_chunked(
         tts_model,
-        data.text,
+        text_to_speak(data.text, data.language, data.verbalize),
         voice_prompt,
         language=data.language,
         seed=data.seed,

@@ -113,9 +113,7 @@ async def _call_rest(monkeypatch, profile_language, requested_language=None):
     )
 
 
-async def test_rest_speak_falls_back_to_profile_language(
-    captured_request, monkeypatch
-):
+async def test_rest_speak_falls_back_to_profile_language(captured_request, monkeypatch):
     await _call_rest(monkeypatch, profile_language="fr")
     assert captured_request["req"].language == "fr"
 
@@ -127,9 +125,7 @@ async def test_rest_speak_explicit_language_wins(captured_request, monkeypatch):
     assert captured_request["req"].language == "en"
 
 
-async def test_rest_speak_defaults_to_en_without_profile_language(
-    captured_request, monkeypatch
-):
+async def test_rest_speak_defaults_to_en_without_profile_language(captured_request, monkeypatch):
     # Profiles predating the language column resolve to None; the "en"
     # backstop keeps their behaviour unchanged.
     await _call_rest(monkeypatch, profile_language=None)
@@ -157,9 +153,7 @@ async def _call_mcp(monkeypatch, profile_language, requested_language=None):
     await mcp.call_tool("voicebox.speak", args)
 
 
-async def test_mcp_speak_falls_back_to_profile_language(
-    captured_request, monkeypatch
-):
+async def test_mcp_speak_falls_back_to_profile_language(captured_request, monkeypatch):
     # The agent-facing path matters most: an MCP client can't know the
     # profile's language, so omitting it must not silently mean English.
     await _call_mcp(monkeypatch, profile_language="fr")
@@ -171,9 +165,7 @@ async def test_mcp_speak_explicit_language_wins(captured_request, monkeypatch):
     assert captured_request["req"].language == "en"
 
 
-async def test_mcp_speak_defaults_to_en_without_profile_language(
-    captured_request, monkeypatch
-):
+async def test_mcp_speak_defaults_to_en_without_profile_language(captured_request, monkeypatch):
     await _call_mcp(monkeypatch, profile_language=None)
     assert captured_request["req"].language == "en"
 
@@ -181,9 +173,7 @@ async def test_mcp_speak_defaults_to_en_without_profile_language(
 # Persisted generation settings on both surfaces
 
 
-async def test_rest_speak_applies_persisted_generation_settings(
-    captured_request, monkeypatch
-):
+async def test_rest_speak_applies_persisted_generation_settings(captured_request, monkeypatch):
     # The desktop form sends max_chunk_chars/crossfade_ms/normalize explicitly;
     # REST callers used to run with the schema defaults (800 / 50 / True).
     await _call_rest(monkeypatch, profile_language="es")
@@ -193,11 +183,21 @@ async def test_rest_speak_applies_persisted_generation_settings(
     assert req.normalize is False
 
 
-async def test_mcp_speak_applies_persisted_generation_settings(
-    captured_request, monkeypatch
-):
+async def test_mcp_speak_applies_persisted_generation_settings(captured_request, monkeypatch):
     await _call_mcp(monkeypatch, profile_language="es")
     req = captured_request["req"]
     assert req.max_chunk_chars == 550
     assert req.crossfade_ms == 80
     assert req.normalize is False
+
+
+async def test_rest_speak_forwards_the_verbalize_opt_out(captured_request, monkeypatch):
+    monkeypatch.setattr(speak_route, "resolve_profile", lambda profile, client_id, db: _FakeProfile("es"))
+
+    await speak_route.speak(
+        models.SpeakRequest(text="Son 15", verbalize=False),
+        _FakeRequest(client_id="claude-code"),
+        _FakeDB(),
+    )
+
+    assert captured_request["req"].verbalize is False
