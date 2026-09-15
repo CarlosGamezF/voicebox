@@ -29,6 +29,7 @@ import requests
 import soundfile as sf
 
 from backend.utils.text_normalize import normalize_text
+from backend.utils.verbalize import verbalize
 
 CORPUS = [
     {"id": "short_question", "text": "¿Vienes conmigo esta tarde al mercado?"},
@@ -86,6 +87,15 @@ def build_generate_payload(cond: Condition, *, profile_id: str, text: str, seed:
     payload = {"profile_id": profile_id, "text": text, "seed": seed, "language": language, **DEFAULT_PAYLOAD}
     payload.update(cond.overrides)
     return payload
+
+
+def spoken_wer(reference: str, hypothesis: str, language: str) -> float:
+    """WER on what was said: both sides are verbalized first, so "15" and "quince" agree.
+
+    Whisper writes numbers back as digits ("15 de septiembre de 2026", "20 minutos"),
+    which would count as errors against a spelled-out reference and vice versa.
+    """
+    return wer(verbalize(reference, language), verbalize(hypothesis, language))
 
 
 def wer(reference: str, hypothesis: str) -> float:
@@ -299,7 +309,7 @@ def _run_take(
     row["wav"] = str(wav_path.relative_to(out))
     if not args.skip_wer:
         hypothesis = _transcribe(session, base_url, wav_path, args.stt_model, args.language)
-        row["wer"] = round(wer(item["text"], hypothesis), 4)
+        row["wer"] = round(spoken_wer(item["text"], hypothesis, args.language), 4)
         row["transcript"] = hypothesis
     print(
         f"[{cond.name}] {item['id']} seed {seed}: {row['duration_s']} s, {row['chars_per_s']} chars/s, WER {row.get('wer', 'n/a')}, {wall} s wall"

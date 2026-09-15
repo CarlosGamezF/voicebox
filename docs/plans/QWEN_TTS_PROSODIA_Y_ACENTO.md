@@ -64,6 +64,16 @@ Las tres condiciones son indistinguibles en las métricas objetivas: mismo WER, 
 
 Todo el material de la sesión (audios, `results.csv/json` por condición, `summarize_experiments.py`) está en `~/voicebox-eval-2026-09-14/`.
 
+**Experimento C (2026-09-15): expansor de texto antes de sintetizar.** Tras la medición anterior se añadió `backend/utils/verbalize.py`: para español convierte a palabras cifras, decimales, fechas, horas, importes, porcentajes, unidades, ordinales y abreviaturas antes de entregar el texto al modelo (el texto guardado no cambia; `"verbalize": false` en la petición lo desactiva). Medido con la transcripción de referencia ya recortada, tres semillas, trozos de 550, sobre los dos textos problemáticos y la narración con fecha como control:
+
+| Texto | Sin expansor (WER hablado por semilla) | Con expansor |
+|---|---|---|
+| Cifras y moneda | 0,191 / 0,213 / 0,191 | 0,000 / 0,000 / 0,000 |
+| Abreviaturas | 0,115 / 0,115 / 0,269 | 0,000 / 0,000 / 0,000 |
+| Narración con fecha | 0,000 ×3 | 0,000 ×3 |
+
+Sin expansor el modelo seguía inventando cantidades ("1.534.556 euros", "12.500 por 5") y deformando "p. ej." y "Srta."; con él las nueve tomas son exactas. El "WER hablado" compara lo dicho, no la ortografía: Whisper vuelve a escribir "15 de septiembre de 2026" o "20 minutos" aunque el modelo dijera las palabras, así que el harness ahora expande las dos partes antes de comparar (`spoken_wer`). Velocidad y pausas no cambiaron de forma apreciable (14,0 frente a 14,6 caracteres por segundo).
+
 ## Problema
 
 El audio generado en español con una voz generada (diseñada por descripción o clonada) suena lineal: entonación plana y acento no nativo. La pregunta era si los modelos de Qwen ofrecen algún control para mejorarlo.

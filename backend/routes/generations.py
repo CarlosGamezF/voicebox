@@ -138,6 +138,7 @@ async def generate_speech(
             model_size=model_size,
             seed=data.seed,
             normalize=data.normalize,
+            verbalize=data.verbalize,
             effects_chain=effects_chain_config,
             instruct=data.instruct,
             mode="generate",

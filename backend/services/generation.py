@@ -42,11 +42,14 @@ async def run_generation(
     max_chunk_chars: Optional[int] = None,
     crossfade_ms: Optional[int] = None,
     version_id: Optional[str] = None,
+    verbalize: bool = True,
 ) -> None:
     """Execute TTS inference and persist the result.
 
     This is the single entry point for all background generation work.
     It is designed to be enqueued via ``services.task_queue.enqueue_generation``.
+    The stored text stays as the user wrote it; ``verbalize`` only changes
+    what the model is asked to say (see ``text_to_speak``).
     """
     from ..backends import (
         engine_needs_trim,
@@ -91,7 +94,9 @@ async def run_generation(
         if crossfade_ms is not None:
             gen_kwargs["crossfade_ms"] = crossfade_ms
 
-        audio, sample_rate = await generate_chunked(tts_model, text, voice_prompt, **gen_kwargs)
+        audio, sample_rate = await generate_chunked(
+            tts_model, text_to_speak(text, language, verbalize), voice_prompt, **gen_kwargs
+        )
 
         # Normalise only when the take asks for it: retry and regenerate
         # replay the original setting instead of forcing it.
@@ -250,6 +255,15 @@ def _save_retry(
     return config.to_storage_path(audio_path)
 
 
+def text_to_speak(text: str, language: str, verbalize: bool = True) -> str:
+    """The text handed to the model: spelled-out numbers, dates, money and abbreviations when asked."""
+    if not verbalize:
+        return text
+    from ..utils.verbalize import verbalize as _verbalize
+
+    return _verbalize(text, language)
+
+
 async def generate_audio_sync(
     *,
     profile_id: str,
@@ -315,7 +329,7 @@ async def generate_audio_sync(
         gen_kwargs["crossfade_ms"] = crossfade_ms
 
     audio, sample_rate = await generate_chunked(
-        tts_model, text, voice_prompt, **gen_kwargs
+        tts_model, text_to_speak(text, language), voice_prompt, **gen_kwargs
     )
 
     if normalize:

@@ -115,6 +115,10 @@ class GenerationRequest(BaseModel):
         default=50, ge=0, le=500, description="Crossfade duration in ms between chunks (0 for hard cut)"
     )
     normalize: bool = Field(default=True, description="Normalize output audio volume")
+    verbalize: bool = Field(
+        default=True,
+        description="Spell out numbers, dates, money, units and abbreviations before synthesis (Spanish only for now)",
+    )
     effects_chain: Optional[List["EffectConfig"]] = Field(
         None, description="Effects chain to apply after generation (overrides profile default)"
     )

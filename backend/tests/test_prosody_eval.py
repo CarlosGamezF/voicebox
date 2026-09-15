@@ -18,6 +18,7 @@ from backend.tools.prosody_eval import (
     make_blind_pairs,
     normalize_text,
     parse_condition,
+    spoken_wer,
     wer,
 )
 
@@ -42,6 +43,15 @@ def test_wer_counts_substitutions_insertions_and_deletions():
     assert wer("uno dos tres", "uno dos tres cuatro") == 1 / 3
     assert wer("uno dos tres", "uno tres") == 1 / 3
     assert wer("", "algo") == 1.0
+
+
+def test_spoken_wer_ignores_how_numbers_are_written():
+    reference = "Pagó 1.234,56 € el 15/09/2026 y caminó veinte minutos."
+    heard = "Pagó mil doscientos treinta y cuatro euros con cincuenta y seis céntimos el 15 de septiembre de 2026 y caminó 20 minutos."
+
+    assert spoken_wer(reference, heard, "es") == 0.0
+    assert wer(reference, heard) > 0.3  # the plain metric punishes the spelling difference
+    assert spoken_wer("15 people", "15 people", "en") == 0.0
 
 
 def test_audio_metrics_measure_silence_pauses_and_rate():
